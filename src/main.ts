@@ -3,7 +3,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { animate as _animate, spring, easeInOut } from "motion";
 const animate = _animate as any;
-import { createEditor, setEditorContent, getEditorContent, setEditorDarkMode, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, suppressChangeEvents, insertAtCursor } from "./editor";
+import { createEditor, setEditorContent, getEditorContent, setEditorDarkMode, setEditorLanguage, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, suppressChangeEvents, insertAtCursor } from "./editor";
 import { renderPreviewContent, extractTOC, renderMarkdown } from "./preview";
 import type { AppState, ViewMode, Settings, Tab, FileEntry, LintIssue } from "./types";
 import "./styles/main.css";
@@ -720,7 +720,7 @@ function setViewMode(mode: ViewMode): void {
 
   if (mode === "edit" || mode === "split") {
     if (!editorContainer.querySelector(".cm-editor")) {
-      createEditor(editorContainer, state.darkMode);
+      createEditor(editorContainer, state.darkMode, settings.language);
       const tab = getActiveTab();
       if (tab) setEditorContent(tab.content);
       setupScrollListeners();
@@ -1533,6 +1533,7 @@ document.addEventListener("click", (e) => {
 statusLanguage.addEventListener("change", () => {
   settings.language = statusLanguage.value;
   saveSettingsFn();
+  setEditorLanguage(settings.language);
 });
 
 // === Init ===

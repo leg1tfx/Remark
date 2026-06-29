@@ -587,7 +587,7 @@ select.input {
 }
 
 .typewriter-mode .cm-line {
-  opacity: 0.3;
+  opacity: 0.5;
   transition: opacity 0.25s ease;
 }
 

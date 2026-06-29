@@ -1,4 +1,4 @@
-import { EditorView, keymap, placeholder } from "@codemirror/view";
+import { EditorView, keymap, placeholder, highlightActiveLine } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
@@ -14,7 +14,13 @@ export function suppressChangeEvents(val: boolean): void {
   suppressChange = val;
 }
 
-export function createEditor(container: HTMLElement, darkMode: boolean): EditorView {
+export function setEditorLanguage(lang: string): void {
+  if (!view) return;
+  const cmContent = view.dom.querySelector(".cm-content") as HTMLElement | null;
+  if (cmContent) cmContent.lang = lang;
+}
+
+export function createEditor(container: HTMLElement, darkMode: boolean, language = "en"): EditorView {
   const state = EditorState.create({
     doc: "",
     extensions: [
@@ -23,7 +29,8 @@ export function createEditor(container: HTMLElement, darkMode: boolean): EditorV
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       placeholder("Start writing..."),
       EditorView.lineWrapping,
-      EditorView.contentAttributes.of({ spellcheck: "true" }),
+      EditorView.contentAttributes.of({ spellcheck: "true", lang: language }),
+      highlightActiveLine(),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && !suppressChange) {
           dispatchEvent(new CustomEvent("editor-change", {
