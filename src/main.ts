@@ -1239,15 +1239,24 @@ document.addEventListener("keydown", (e) => {
 });
 
 // Drag & Drop
+function hideDropOverlay(): void {
+  try {
+    animate(dropOverlay, { opacity: [1, 0] }, { duration: 0.12, ease: easeInOut });
+    setTimeout(() => dropOverlay.classList.add("hidden"), 160);
+  } catch {
+    dropOverlay.classList.add("hidden");
+  }
+}
+
 getCurrentWindow().onDragDropEvent(async (event) => {
   if (event.payload.type === "over") {
     dropOverlay.classList.remove("hidden");
     animate(dropOverlay, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
     animate(dropContent, { scale: [0.92, 1] }, { duration: 0.2, ease: spring() });
   } else if (event.payload.type === "leave") {
-    animate(dropOverlay, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut, onFinish: () => dropOverlay.classList.add("hidden") });
+    hideDropOverlay();
   } else if (event.payload.type === "drop") {
-    animate(dropOverlay, { opacity: [1, 0] }, { duration: 0.1, ease: easeInOut, onFinish: () => dropOverlay.classList.add("hidden") });
+    hideDropOverlay();
     const path = event.payload.paths[0];
     if (!path) return;
     if (!path.endsWith(".md") && !path.endsWith(".markdown") && !path.endsWith(".txt")) {
