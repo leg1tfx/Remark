@@ -127,7 +127,15 @@
       <footer id="status-bar" class="flex items-center gap-3 px-3 py-1 border-t text-xs text-muted">
         <span id="status-text">Ready</span>
         <span id="word-count" class="hidden text-xs text-muted"></span>
+        <button id="btn-lint" class="hidden flex items-center gap-1 text-xs hover:text-text" title="Click for details">
+          <span id="lint-warn-icon" class="text-amber-500">⚠</span>
+          <span id="lint-count">0</span>
+        </button>
         <span class="flex-1"></span>
+        <button id="btn-update" class="hidden flex items-center gap-1 text-xs text-accent hover:underline" title="New version available">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          Update available
+        </button>
         <span id="status-ollama" class="flex items-center gap-1 hidden">
           <span class="w-1.5 h-1.5 rounded-full bg-muted"></span>
           AI
@@ -302,6 +310,10 @@
       <div id="export-menu" class="fixed z-50 hidden settings-panel border rounded-lg shadow-xl py-1 text-sm">
         <button id="export-html" class="w-full text-left px-4 py-1.5 hover:bg-hover">Export as HTML</button>
         <button id="export-pdf" class="w-full text-left px-4 py-1.5 hover:bg-hover">Export as PDF</button>
+      </div>
+
+      <!-- Lint Panel -->
+      <div id="lint-panel" class="fixed z-50 hidden settings-panel border rounded-lg shadow-xl py-1 text-sm max-w-md max-h-64 overflow-y-auto" style="bottom:28px;left:4px">
       </div>
 
       <!-- Success Overlay -->

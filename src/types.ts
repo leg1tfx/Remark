@@ -25,10 +25,20 @@ export interface Settings {
   ollamaModel: string;
   autoSaveInterval: number;
   recentFiles: string[];
+  splitRatio?: number;
+  sessionTabs?: { file: string | null; scrollTop: number }[];
+  sessionActiveTab?: number;
 }
 
 export interface FileEntry {
   name: string;
   path: string;
   is_dir: boolean;
+}
+
+export interface LintIssue {
+  line: number;
+  column: number;
+  message: string;
+  rule: string;
 }

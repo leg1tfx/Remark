@@ -46,11 +46,18 @@ marked.setOptions({
   gfm: true,
 });
 
-export function renderMarkdown(markdown: string): string {
-  const raw = marked.parse(markdown, { async: false }) as string;
+export function renderMarkdown(markdown: string, allowInputs = false): string {
+  let raw = marked.parse(markdown, { async: false }) as string;
+  // Convert task lists: - [ ] and - [x] inside <li>
+  if (allowInputs) {
+    raw = raw.replace(/<li>(- \[( |x)\])\s*/gi, (_, __, checked) => {
+      const chk = checked !== " " ? 'checked' : '';
+      return `<li class="task-list-item"><input type="checkbox" ${chk} style="margin-right:6px;accent-color:var(--accent);vertical-align:middle">`;
+    });
+  }
   const sanitized = DOMPurify.sanitize(raw, {
-    ADD_ATTR: ["target"],
-    ADD_TAGS: [
+    ADD_ATTR: ["target", "type", "checked", "disabled"],
+    ADD_TAGS: ["input",
       "math", "mi", "mo", "mn", "ms", "mfrac", "msup", "msub",
       "mtable", "mtr", "mtd", "mrow", "msqrt", "mroot", "merror",
       "mpadded", "mphantom", "menclose", "mstyle", "msubsup",
@@ -64,7 +71,7 @@ export function renderMarkdown(markdown: string): string {
 let mermaidInitialized = false;
 
 export function renderPreviewContent(container: HTMLElement, content: string): void {
-  const html = renderMarkdown(content);
+  const html = renderMarkdown(content, true);
   container.innerHTML = html;
 
   // Syntax highlighting for code blocks
@@ -108,6 +115,12 @@ export function renderPreviewContent(container: HTMLElement, content: string): v
       h.prepend(a);
     }
   });
+
+  // Task list click handler (emitted for main.ts to wire up)
+  const taskItems = container.querySelectorAll<HTMLElement>("li.task-list-item input[type=checkbox]");
+  if (taskItems.length > 0) {
+    dispatchEvent(new CustomEvent("task-list-rendered", { detail: { container, content } }));
+  }
 
   // Emit TOC update
   dispatchEvent(new CustomEvent("toc-update", { detail: { container } }));

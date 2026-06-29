@@ -5,7 +5,7 @@ import { animate as _animate, spring, easeInOut } from "motion";
 const animate = _animate as any;
 import { createEditor, setEditorContent, getEditorContent, setEditorDarkMode, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, suppressChangeEvents, insertAtCursor } from "./editor";
 import { renderPreviewContent, extractTOC, renderMarkdown } from "./preview";
-import type { AppState, ViewMode, Settings, Tab, FileEntry } from "./types";
+import type { AppState, ViewMode, Settings, Tab, FileEntry, LintIssue } from "./types";
 import "./styles/main.css";
 import "highlight.js/styles/github.css";
 
@@ -38,6 +38,7 @@ const defaultSettings: Settings = {
   ollamaModel: "llama3.2:3b",
   autoSaveInterval: 2000,
   recentFiles: [],
+  splitRatio: 0.5,
 };
 
 let settings: Settings = { ...defaultSettings };
@@ -56,6 +57,11 @@ const statusText = document.getElementById("status-text")!;
 const statusOllama = document.getElementById("status-ollama")!;
 const statusFilenameBottom = document.getElementById("status-filename-bottom")!;
 const wordCountEl = document.getElementById("word-count")!;
+const resizeHandle = document.getElementById("resize-handle")!;
+const btnLint = document.getElementById("btn-lint")!;
+const lintCount = document.getElementById("lint-count")!;
+const lintPanel = document.getElementById("lint-panel")!;
+const btnUpdate = document.getElementById("btn-update")!;
 
 const dropOverlay = document.getElementById("drop-overlay")!;
 const dropContent = dropOverlay.querySelector(".drop-content") as HTMLElement;
@@ -210,6 +216,7 @@ function addTab(file: string | null, content: string = ""): Tab {
   };
   state.tabs.push(tab);
   switchTab(tab.id);
+  saveSession();
   return tab;
 }
 
@@ -224,6 +231,7 @@ function closeTab(id: string): void {
   }
   const idx = state.tabs.indexOf(tab);
   state.tabs.splice(idx, 1);
+  saveSession();
   if (state.activeTabId === id) {
     const next = state.tabs[Math.min(idx, state.tabs.length - 1)] ?? null;
     setActiveTab(next);
@@ -581,6 +589,7 @@ function onContentChange(content: string): void {
     updatePreview();
   }
   updateWordCount();
+  runLint();
 }
 
 function setViewMode(mode: ViewMode): void {
@@ -593,6 +602,19 @@ function setViewMode(mode: ViewMode): void {
   const pvWasHidden = previewPanel.classList.contains("hidden");
   editorPanel.classList.toggle("hidden", mode === "view");
   previewPanel.classList.toggle("hidden", mode === "edit");
+
+  // Split resizer
+  resizeHandle.classList.toggle("hidden", mode !== "split");
+  if (mode === "split") {
+    const ratio = settings.splitRatio ?? 0.5;
+    editorPanel.style.flex = `0 0 ${ratio * 100}%`;
+    previewPanel.style.flex = `1 1 0%`;
+    editorPanel.style.minWidth = "0";
+    previewPanel.style.minWidth = "0";
+  } else {
+    editorPanel.style.flex = "";
+    previewPanel.style.flex = "";
+  }
 
   if (mode === "edit" || mode === "split") {
     if (!editorContainer.querySelector(".cm-editor")) {
@@ -635,6 +657,7 @@ async function openFile(path?: string): Promise<void> {
     settings.recentFiles.unshift(filePath);
     if (settings.recentFiles.length > 10) settings.recentFiles.length = 10;
     saveSettingsFn();
+    saveSession();
 
     // Set sidebar root to file's parent dir
     loadSidebarDir(filePath);
@@ -658,6 +681,7 @@ async function saveFile(silent = false): Promise<void> {
     settings.recentFiles.unshift(result as string);
     if (settings.recentFiles.length > 10) settings.recentFiles.length = 10;
     saveSettingsFn();
+    saveSession();
   }
   const content = getEditorContent();
   try {
@@ -1111,6 +1135,237 @@ function setupScrollListeners(): void {
   }, { passive: true });
 }
 
+// === Split-Pane-Resizer ===
+let isDragging = false;
+
+function initResizer(): void {
+  resizeHandle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    isDragging = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  });
+}
+
+document.addEventListener("mousemove", (e) => {
+  if (!isDragging) return;
+  const main = document.getElementById("main")!;
+  const rect = main.getBoundingClientRect();
+  const ratio = Math.min(0.85, Math.max(0.15, (e.clientX - rect.left) / rect.width));
+  settings.splitRatio = ratio;
+  if (state.viewMode === "split") {
+    editorPanel.style.flex = `0 0 ${ratio * 100}%`;
+    previewPanel.style.flex = `1 1 0%`;
+  }
+});
+
+document.addEventListener("mouseup", () => {
+  if (isDragging) {
+    isDragging = false;
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    saveSettingsFn();
+  }
+});
+
+// === Session Restore ===
+function saveSession(): void {
+  settings.sessionTabs = state.tabs.map((t) => ({
+    file: t.file,
+    scrollTop: t.file ? getEditorScrollTop() : 0,
+  }));
+  settings.sessionActiveTab = state.activeTabId
+    ? state.tabs.findIndex((t) => t.id === state.activeTabId)
+    : 0;
+  saveSettingsFn();
+}
+
+async function restoreSession(): Promise<void> {
+  const st = settings.sessionTabs;
+  if (!st || st.length === 0) return;
+  let restoredCount = 0;
+  for (const s of st) {
+    if (!s.file) {
+      addTab(null, "");
+      restoredCount++;
+      continue;
+    }
+    try {
+      const exists = await invoke<boolean>("file_exists", { path: s.file });
+      if (exists) {
+        const content = await invoke<string>("read_file", { path: s.file });
+        const tab = addTab(s.file, content);
+        tab.originalContent = content;
+        tab.modified = false;
+        restoredCount++;
+      }
+    } catch {}
+  }
+  // Restore active tab
+  const idx = settings.sessionActiveTab ?? 0;
+  if (state.tabs[idx]) switchTab(state.tabs[idx].id);
+  setStatus(`Restored ${restoredCount} tab(s)`);
+}
+
+// === Task List Handler ===
+addEventListener("task-list-rendered", ((e: CustomEvent) => {
+  const container = e.detail.container as HTMLElement;
+  const sourceContent = e.detail.content as string;
+  container.querySelectorAll<HTMLInputElement>("li.task-list-item input[type=checkbox]").forEach((cb) => {
+    cb.disabled = false;
+    cb.addEventListener("change", () => {
+      const items = container.querySelectorAll("li.task-list-item input[type=checkbox]");
+      let idx = 0;
+      for (const item of items) {
+        if (item === cb) break;
+        idx++;
+      }
+      // Find Nth task list item in source and toggle
+      const tab = getActiveTab();
+      if (!tab) return;
+      const lines = tab.content.split("\n");
+      let found = 0;
+      for (let i = 0; i < lines.length; i++) {
+        if (/^\s*[-*]\s+\[[ x]\]/i.test(lines[i])) {
+          if (found === idx) {
+            lines[i] = cb.checked
+              ? lines[i].replace(/\[ \]/, "[x]")
+              : lines[i].replace(/\[x\]/i, "[ ]");
+            tab.content = lines.join("\n");
+            tab.modified = tab.content !== tab.originalContent;
+            setEditorContent(tab.content);
+            updatePreview();
+            updateTitle();
+            renderTabBar();
+            updateWordCount();
+            break;
+          }
+          found++;
+        }
+      }
+    });
+  });
+}) as EventListener);
+
+// === Auto-Updater ===
+async function checkForUpdate(): Promise<void> {
+  try {
+    const latest = await invoke<string | null>("check_update", { currentVersion: "1.0.0" });
+    if (latest) {
+      btnUpdate.classList.remove("hidden");
+      btnUpdate.addEventListener("click", () => {
+        window.open("https://github.com/leg1tfx/Remark/releases/latest", "_blank");
+      });
+    }
+  } catch {}
+}
+
+// === Markdown Lint ===
+let currentIssues: LintIssue[] = [];
+
+function runLint(): void {
+  const tab = getActiveTab();
+  if (!tab || !tab.content.trim()) {
+    btnLint.classList.add("hidden");
+    lintPanel.classList.add("hidden");
+    currentIssues = [];
+    return;
+  }
+  const issues: LintIssue[] = [];
+  const lines = tab.content.split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    // Trailing whitespace
+    if (/[ \t]+$/.test(line) && line.length > 0) {
+      issues.push({ line: lineNum, column: line.length, message: "Trailing whitespace", rule: "trailing-space" });
+    }
+
+    // Multiple consecutive blank lines (check next line too)
+    if (i > 0 && line === "" && lines[i - 1] === "") {
+      issues.push({ line: lineNum, column: 1, message: "Consecutive blank lines", rule: "consecutive-blank-lines" });
+    }
+
+    // Heading without space after #
+    if (/^#{1,6}[^#\s]/.test(line) && !/^#{1,6}\s/.test(line)) {
+      issues.push({ line: lineNum, column: 1, message: "Missing space after heading marker", rule: "heading-space" });
+    }
+
+    // List marker without space
+    if (/^(\s*)[-*+]\S/.test(line)) {
+      issues.push({ line: lineNum, column: line.search(/[-*+]/) + 1, message: "Missing space after list marker", rule: "list-marker-space" });
+    }
+
+    // Long lines
+    if (line.length > 120 && !/^```/.test(line)) {
+      issues.push({ line: lineNum, column: 121, message: `Line too long (${line.length} chars)`, rule: "line-length" });
+    }
+  }
+
+  // No trailing newline
+  if (tab.content.length > 0 && !tab.content.endsWith("\n")) {
+    issues.push({ line: lines.length, column: lines[lines.length - 1].length, message: "No trailing newline", rule: "final-newline" });
+  }
+
+  currentIssues = issues;
+  if (issues.length > 0) {
+    lintCount.textContent = String(issues.length);
+    btnLint.classList.remove("hidden");
+    lintPanel.innerHTML = issues.map((iss) =>
+      `<div class="lint-item" data-line="${iss.line}">
+        <span class="lint-line">${iss.line}:${iss.column}</span>
+        <span class="lint-msg">${escHtml(iss.message)}</span>
+      </div>`
+    ).join("");
+    lintPanel.querySelectorAll(".lint-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        const line = parseInt((el as HTMLElement).dataset.line!);
+        scrollEditorToLine(line);
+        lintPanel.classList.add("hidden");
+      });
+    });
+  } else {
+    btnLint.classList.add("hidden");
+    lintPanel.classList.add("hidden");
+  }
+}
+
+function escHtml(s: string): string {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function scrollEditorToLine(line: number): void {
+  // Set view to edit mode temporarily if in view mode
+  if (state.viewMode === "view") setViewMode("split");
+  const el = getEditorScrollElement();
+  if (!el) return;
+  const cm = el.querySelector(".cm-content");
+  if (!cm) return;
+  const lineEl = cm.querySelector(`[role="presentation"]:nth-child(${line})`) as HTMLElement | null;
+  if (lineEl) {
+    lineEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    lineEl.style.outline = "2px solid var(--accent)";
+    setTimeout(() => { lineEl.style.outline = ""; }, 2000);
+  }
+}
+
+btnLint.addEventListener("click", (e) => {
+  lintPanel.classList.toggle("hidden");
+  const rect = btnLint.getBoundingClientRect();
+  lintPanel.style.bottom = "28px";
+  lintPanel.style.left = `${rect.left}px`;
+});
+
+document.addEventListener("click", (e) => {
+  if (e.target !== btnLint && !lintPanel.contains(e.target as Node)) {
+    lintPanel.classList.add("hidden");
+  }
+});
+
 // === Init ===
 async function init(): Promise<void> {
   await loadSettings();
@@ -1128,7 +1383,10 @@ async function init(): Promise<void> {
   updateTitle();
   setStatus("Ready");
 
-  // If no tabs, add a default empty one
+  // Restore session if available
+  await restoreSession();
+
+  // If still no tabs, add a default empty one
   if (state.tabs.length === 0) {
     addTab(null, "");
     setEditorContent("");
@@ -1139,6 +1397,15 @@ async function init(): Promise<void> {
   await checkFirstRunOllama();
 
   ollamaCheckTimer = setInterval(updateOllamaStatusBar, 30000);
+
+  // Init resizer
+  initResizer();
+
+  // Check for updates
+  checkForUpdate();
+
+  // Run initial lint
+  runLint();
 }
 
 init();

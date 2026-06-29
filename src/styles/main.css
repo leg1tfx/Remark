@@ -537,3 +537,50 @@ select.input {
   text-decoration: none;
   transition: opacity 0.15s;
 }
+
+/* === Resize handle === */
+#resize-handle {
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+}
+#resize-handle::after {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+}
+
+/* === Lint === */
+#lint-panel {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.lint-item {
+  display: flex;
+  align-items: start;
+  gap: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.lint-item:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.lint-item .lint-line {
+  font-weight: 600;
+  color: var(--text);
+  min-width: 3ch;
+  flex-shrink: 0;
+}
+.lint-item .lint-msg {
+  word-break: break-word;
+}
+
+/* === Mermaid === */
+.mermaid {
+  margin: 1em 0;
+  display: flex;
+  justify-content: center;
+}

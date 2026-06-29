@@ -204,6 +204,39 @@ async fn pull_ollama_model(model: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn file_exists(path: String) -> bool {
+    PathBuf::from(&path).exists()
+}
+
+#[tauri::command]
+async fn check_update(current_version: String) -> Result<Option<String>, String> {
+    let url = "https://api.github.com/repos/leg1tfx/Remark/releases/latest";
+    let client = reqwest::Client::builder()
+        .user_agent("Remark")
+        .build()
+        .map_err(|e| format!("{}", e))?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("{}", e))?;
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("{}", e))?;
+    let latest = data["tag_name"].as_str().unwrap_or("").trim_start_matches('v');
+    if latest.is_empty() {
+        return Ok(None);
+    }
+    // Simple semver compare: if latest != current, there's an update
+    if latest != current_version {
+        Ok(Some(latest.to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
 async fn get_ollama_models(endpoint: String) -> Result<Vec<String>, String> {
     let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
     let resp = reqwest::get(&url)
@@ -241,6 +274,8 @@ pub fn run(initial_file: Option<String>) {
             list_directory,
             create_dir,
             save_image,
+            file_exists,
+            check_update,
             get_initial_file,
             read_settings,
             save_settings,
