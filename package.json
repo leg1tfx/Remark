@@ -20,8 +20,7 @@
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-fs": "^2.0.0",
-    "@tauri-apps/plugin-shell": "^2.3.5",
-    "codemirror": "^6.0.1",
+
     "dompurify": "^3.1.0",
     "highlight.js": "^11.10.0",
     "katex": "^0.17.0",

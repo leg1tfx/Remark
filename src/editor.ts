@@ -8,6 +8,7 @@ import { searchKeymap, findNext, findPrevious, closeSearchPanel, openSearchPanel
 
 let view: EditorView | null = null;
 let suppressChange = false;
+let findController: AbortController | null = null;
 
 export function suppressChangeEvents(val: boolean): void {
   suppressChange = val;
@@ -20,7 +21,7 @@ export function createEditor(container: HTMLElement, darkMode: boolean): EditorV
       markdown({ codeLanguages: languages }),
       history(),
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-      placeholder("Starte mit dem Schreiben..."),
+      placeholder("Start writing..."),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "true" }),
       EditorView.updateListener.of((update) => {
@@ -64,6 +65,9 @@ export function createEditor(container: HTMLElement, darkMode: boolean): EditorV
     parent: container,
   });
 
+  // Remove previous listener to prevent leak
+  if (findController) findController.abort();
+  findController = new AbortController();
   addEventListener("editor-find", ((e: CustomEvent) => {
     const { query, direction } = e.detail;
     if (!view) return;
@@ -79,7 +83,7 @@ export function createEditor(container: HTMLElement, darkMode: boolean): EditorV
     } else if (direction === "prev") {
       findPrevious(view);
     }
-  }) as EventListener);
+  }) as EventListener, { signal: findController.signal });
 
   return view;
 }

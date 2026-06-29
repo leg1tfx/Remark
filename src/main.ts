@@ -103,7 +103,6 @@ const setupSpinnerArc2 = document.getElementById("setup-spinner-arc2")!;
 const setupSpinnerArc3 = document.getElementById("setup-spinner-arc3")!;
 const successCircle = document.getElementById("success-circle")!;
 const successCheck = document.getElementById("success-check")!;
-const successText = document.getElementById("success-text")!;
 const successMsgEl = document.getElementById("success-text")!;
 
 const btnView = document.getElementById("btn-view")!;
@@ -114,7 +113,7 @@ const btnSave = document.getElementById("btn-save")!;
 const btnTheme = document.getElementById("btn-theme")!;
 const btnFind = document.getElementById("btn-find")!;
 const btnOllama = document.getElementById("btn-ollama")!;
-const btnSettings = document.getElementById("btn-settings")!;
+
 const btnSidebar = document.getElementById("btn-sidebar")!;
 const btnFocus = document.getElementById("btn-focus")!;
 const btnNewTab = document.getElementById("btn-new-tab")!;
@@ -260,7 +259,9 @@ function switchTab(id: string): void {
   const old = getActiveTab();
   if (old) {
     old.scrollTop = getEditorScrollTop();
-    old.content = getEditorContent();
+    if (editorContainer.querySelector(".cm-editor")) {
+      old.content = getEditorContent();
+    }
   }
   const tab = state.tabs.find((t) => t.id === id);
   if (!tab) return;
@@ -291,6 +292,12 @@ function loadTab(tab: Tab): void {
 }
 
 // === Settings ===
+function openSettings(): void {
+  const panel = settingsModal.querySelector(".settings-panel") as HTMLElement;
+  showModal(settingsModal, panel);
+  refreshModelSuggestions();
+}
+
 async function loadSettings(): Promise<void> {
   try {
     const raw = await invoke<string>("read_settings");
@@ -739,9 +746,15 @@ function updateFindCount(): void {
 }
 
 // === Scroll Sync ===
+let scrollSyncLock = false;
+
 function syncScroll(source: HTMLElement, target: HTMLElement): void {
-  const pct = source.scrollTop / (source.scrollHeight - source.clientHeight);
-  target.scrollTop = pct * (target.scrollHeight - target.clientHeight);
+  if (scrollSyncLock) return;
+  const denom = source.scrollHeight - source.clientHeight;
+  if (denom <= 0) return;
+  scrollSyncLock = true;
+  target.scrollTop = (source.scrollTop / denom) * (target.scrollHeight - target.clientHeight);
+  requestAnimationFrame(() => { scrollSyncLock = false; });
 }
 
 // === Sidebar ===
@@ -776,19 +789,21 @@ function renderTree(entries: FileEntry[], basePath: string, depth: number): stri
   for (const entry of filtered) {
     const isExpanded = expandedDirs.has(entry.path);
     const indent = depth * 16;
+    const name = escHtml(entry.name);
+    const path = escHtml(entry.path);
     if (entry.is_dir) {
-      html += `<div class="file-item ${isExpanded ? "dir-open" : ""}" data-path="${entry.path}" data-dir="1" style="padding-left:${6 + indent}px">
+      html += `<div class="file-item ${isExpanded ? "dir-open" : ""}" data-path="${path}" data-dir="1" style="padding-left:${6 + indent}px">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-        <span>${entry.name}</span>
+        <span>${name}</span>
       </div>`;
       if (isExpanded) {
-        html += `<div class="file-children" data-parent="${entry.path}">loading…</div>`;
+        html += `<div class="file-children" data-parent="${path}">loading…</div>`;
       }
     } else {
-      html += `<div class="file-item" data-path="${entry.path}" style="padding-left:${6 + indent}px">
+      html += `<div class="file-item" data-path="${path}" style="padding-left:${6 + indent}px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
-        <span>${entry.name}</span>
+        <span>${name}</span>
       </div>`;
     }
   }
@@ -929,7 +944,8 @@ function exportPDF(): void {
 // === Image Paste ===
 async function handleImagePaste(e: ClipboardEvent): Promise<void> {
   const tab = getActiveTab();
-  if (!tab || !tab.file) return;
+  if (!tab) { setStatus("Open a file first to paste images"); return; }
+  if (!tab.file) { setStatus("Save the file first to paste images"); return; }
   const items = e.clipboardData?.items;
   if (!items) return;
   for (const item of items) {
@@ -1046,9 +1062,7 @@ listen<{ downloaded: number; total: number }>("ollama-download-progress", (event
   setupProgressText.textContent = `${pct}%`;
 });
 
-document.getElementById("btn-settings")!.addEventListener("click", () => {
-  refreshModelSuggestions();
-});
+document.getElementById("btn-settings")!.addEventListener("click", openSettings);
 
 document.getElementById("btn-register-assoc")!.addEventListener("click", async () => {
   try {

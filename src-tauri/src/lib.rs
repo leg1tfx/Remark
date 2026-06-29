@@ -50,17 +50,17 @@ fn save_settings(content: String) -> Result<(), String> {
 
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
-    fs::read_to_string(&path).map_err(|e| format!("Fehler beim Lesen: {}", e))
+    fs::read_to_string(&path).map_err(|e| format!("Read error: {}", e))
 }
 
 #[tauri::command]
 fn write_file(path: String, content: String) -> Result<(), String> {
-    fs::write(&path, &content).map_err(|e| format!("Fehler beim Schreiben: {}", e))
+    fs::write(&path, &content).map_err(|e| format!("Write error: {}", e))
 }
 
 #[tauri::command]
 fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
-    let entries = fs::read_dir(&path).map_err(|e| format!("Fehler beim Lesen des Verzeichnisses: {}", e))?;
+    let entries = fs::read_dir(&path).map_err(|e| format!("Read directory error: {}", e))?;
     let mut items: Vec<FileEntry> = entries
         .filter_map(|e| e.ok())
         .filter(|e| {
@@ -85,12 +85,12 @@ fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
 
 #[tauri::command]
 fn create_dir(path: String) -> Result<(), String> {
-    fs::create_dir_all(&path).map_err(|e| format!("Fehler beim Erstellen des Verzeichnisses: {}", e))
+    fs::create_dir_all(&path).map_err(|e| format!("Create dir error: {}", e))
 }
 
 #[tauri::command]
 fn save_image(path: String, data: Vec<u8>) -> Result<(), String> {
-    fs::write(&path, &data).map_err(|e| format!("Fehler beim Speichern des Bildes: {}", e))
+    fs::write(&path, &data).map_err(|e| format!("Save image error: {}", e))
 }
 
 #[tauri::command]
@@ -122,21 +122,21 @@ async fn format_with_ollama(
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
         .build()
-        .map_err(|e| format!("Client-Fehler: {}", e))?;
+        .map_err(|e| format!("Client error: {}", e))?;
     let resp = client
         .post(&url)
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Ollama-Fehler: {}", e))?;
+        .map_err(|e| format!("Ollama error: {}", e))?;
     let data: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Fehler beim Lesen der Antwort: {}", e))?;
+        .map_err(|e| format!("Response parse error: {}", e))?;
     data["response"]
         .as_str()
         .map(String::from)
-        .ok_or_else(|| "Keine Antwort von Ollama erhalten".to_string())
+        .ok_or_else(|| "Empty response from Ollama".to_string())
 }
 
 #[tauri::command]
@@ -146,24 +146,24 @@ async fn download_ollama(app: tauri::AppHandle) -> Result<String, String> {
 
     let client = reqwest::Client::builder()
         .build()
-        .map_err(|e| format!("Client-Fehler: {}", e))?;
+        .map_err(|e| format!("Client error: {}", e))?;
 
     let resp = client
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("Download-Fehler: {}", e))?;
+        .map_err(|e| format!("Download error: {}", e))?;
 
     let total = resp.content_length().unwrap_or(0);
     let mut downloaded: u64 = 0;
     let mut file = std::fs::File::create(&dest)
-        .map_err(|e| format!("Datei-Fehler: {}", e))?;
+        .map_err(|e| format!("File error: {}", e))?;
 
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Stream-Fehler: {}", e))?;
+        let chunk = chunk.map_err(|e| format!("Stream error: {}", e))?;
         use std::io::Write;
-        file.write_all(&chunk).map_err(|e| format!("Schreibfehler: {}", e))?;
+        file.write_all(&chunk).map_err(|e| format!("Write error: {}", e))?;
         downloaded += chunk.len() as u64;
         let _ = app.emit(
             "ollama-download-progress",
@@ -182,10 +182,10 @@ async fn install_ollama(path: String) -> Result<(), String> {
     let status = std::process::Command::new(&path)
         .arg("/S")
         .status()
-        .map_err(|e| format!("Installationsfehler: {}", e))?;
+        .map_err(|e| format!("Install error: {}", e))?;
 
     if !status.success() {
-        return Err("Installation fehlgeschlagen".to_string());
+        return Err("Installation failed".to_string());
     }
     Ok(())
 }
@@ -195,10 +195,10 @@ async fn pull_ollama_model(model: String) -> Result<(), String> {
     let status = std::process::Command::new("ollama")
         .args(["pull", &model])
         .status()
-        .map_err(|e| format!("Fehler beim Model-Pull: {}", e))?;
+        .map_err(|e| format!("Model pull error: {}", e))?;
 
     if !status.success() {
-        return Err("Model-Pull fehlgeschlagen".to_string());
+        return Err("Model pull failed".to_string());
     }
     Ok(())
 }
@@ -275,12 +275,12 @@ async fn get_ollama_models(endpoint: String) -> Result<Vec<String>, String> {
     let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
     let resp = reqwest::get(&url)
         .await
-        .map_err(|e| format!("Fehler: {}", e))?;
+        .map_err(|e| format!("Ollama fetch error: {}", e))?;
 
     let data: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Fehler beim Lesen: {}", e))?;
+        .map_err(|e| format!("Ollama parse error: {}", e))?;
 
     let models = data["models"]
         .as_array()
@@ -322,5 +322,5 @@ pub fn run(initial_file: Option<String>) {
             get_ollama_models,
         ])
         .run(tauri::generate_context!())
-        .expect("Fehler beim Starten der App");
+        .expect("Failed to launch app");
 }
