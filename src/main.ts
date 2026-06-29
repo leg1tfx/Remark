@@ -120,7 +120,6 @@ const btnViewMode = document.getElementById("btn-view-mode")!;
 const iconViewMode = document.getElementById("icon-view-mode")!;
 const btnMore = document.getElementById("btn-more")!;
 const moreMenu = document.getElementById("more-menu")!;
-const menuFind = document.getElementById("menu-find")!;
 const menuFocus = document.getElementById("menu-focus")!;
 const menuOllama = document.getElementById("menu-ollama")!;
 const menuExportHtml = document.getElementById("menu-export-html")!;
@@ -155,12 +154,13 @@ function showModal(el: HTMLElement, inner: HTMLElement): void {
 }
 
 function hideModal(el: HTMLElement, inner: HTMLElement): void {
-  animate(
-    inner,
-    { opacity: [1, 0], scale: [1, 0.95] },
-    { duration: 0.15, ease: easeInOut, onFinish: () => el.classList.add("hidden") }
-  );
-  animate(el, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut });
+  try {
+    animate(inner, { opacity: [1, 0], scale: [1, 0.95] }, { duration: 0.15, ease: easeInOut });
+    animate(el, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut });
+    setTimeout(() => el.classList.add("hidden"), 200);
+  } catch {
+    el.classList.add("hidden");
+  }
 }
 
 function animateSpinner(el: SVGElement, loop = true): void {
@@ -361,23 +361,23 @@ function applySettingsUI(): void {
 }
 
 function bindSettingsUI(): void {
-  document.getElementById("setting-ollama-enabled")!.addEventListener("change", (e) => {
+  document.getElementById("setting-ollama-enabled")!.addEventListener("input", (e) => {
     settings.ollamaEnabled = (e.target as HTMLInputElement).checked;
     saveSettingsFn();
     updateOllamaStatusBar();
   });
-  document.getElementById("setting-ollama-endpoint")!.addEventListener("change", (e) => {
+  document.getElementById("setting-ollama-endpoint")!.addEventListener("input", (e) => {
     settings.ollamaEndpoint = (e.target as HTMLInputElement).value.trim() || defaultSettings.ollamaEndpoint;
     saveSettingsFn();
   });
-  document.getElementById("setting-ollama-model")!.addEventListener("change", (e) => {
+  document.getElementById("setting-ollama-model")!.addEventListener("input", (e) => {
     const val = (e.target as HTMLSelectElement).value;
     if (val) {
       settings.ollamaModel = val;
       saveSettingsFn();
     }
   });
-  document.getElementById("setting-autosave")!.addEventListener("change", (e) => {
+  document.getElementById("setting-autosave")!.addEventListener("input", (e) => {
     settings.autoSaveInterval = Math.max(500, parseInt((e.target as HTMLInputElement).value) || 2000);
     saveSettingsFn();
     restartAutoSave();
@@ -1084,7 +1084,6 @@ btnViewMode.addEventListener("click", (e) => {
   }
 });
 
-// More menu - right-aligned, avoid window edge
 btnMore.addEventListener("click", (e) => {
   e.stopPropagation();
   const rect = (e.target as HTMLElement).closest("button")!.getBoundingClientRect();
@@ -1092,13 +1091,12 @@ btnMore.addEventListener("click", (e) => {
   const gap = 4;
   const vw = window.innerWidth;
   const menuLeft = rect.right - menuW;
-  const clampedLeft = Math.max(8, menuLeft);
+  const clampedLeft = Math.max(8, Math.min(menuLeft, vw - menuW - 8));
   moreMenu.style.top = `${rect.bottom + gap}px`;
   moreMenu.style.left = `${clampedLeft}px`;
   moreMenu.classList.toggle("hidden");
 });
 
-menuFind.addEventListener("click", () => { moreMenu.classList.add("hidden"); showFindBar(); });
 menuFocus.addEventListener("click", () => { moreMenu.classList.add("hidden"); toggleTypewriter(); });
 menuOllama.addEventListener("click", () => { moreMenu.classList.add("hidden"); formatWithOllama(); });
 menuExportHtml.addEventListener("click", () => { moreMenu.classList.add("hidden"); exportHTML(); });
@@ -1119,13 +1117,10 @@ findInput.addEventListener("keydown", (e) => {
 });
 findInput.addEventListener("input", () => { findInEditor(findInput.value); updateFindCount(); });
 
-function closeSettings(e: MouseEvent): void {
+settingsBackdrop.addEventListener("click", () => {
   const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
-  if (e.target === settingsBackdrop || e.target === settingsClose || (e.target as HTMLElement).closest("#settings-close")) {
-    hideModal(settingsModal, inner);
-  }
-}
-settingsBackdrop.addEventListener("click", closeSettings);
+  hideModal(settingsModal, inner);
+});
 settingsClose.addEventListener("click", () => {
   const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
   hideModal(settingsModal, inner);

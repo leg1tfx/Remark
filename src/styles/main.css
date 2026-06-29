@@ -83,10 +83,16 @@ html, body {
   font-size: 13px;
   color: var(--text);
   outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input:hover {
+  border-color: var(--text-tertiary);
 }
 
 .input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
 }
 
 .input::placeholder {
@@ -102,6 +108,16 @@ html, body {
   cursor: pointer;
   position: relative;
   flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.toggle:hover {
+  background: var(--text-tertiary);
+}
+
+.toggle:hover:checked {
+  background: var(--accent);
+  filter: brightness(1.15);
 }
 
 .toggle::after {
@@ -114,6 +130,7 @@ html, body {
   border-radius: 50%;
   background: white;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: left 0.15s ease;
 }
 
 .toggle:checked {
@@ -142,10 +159,17 @@ select.input {
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-primary:hover {
   filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: scale(0.95);
+  filter: brightness(0.9);
 }
 
 .btn-secondary {
@@ -155,10 +179,17 @@ select.input {
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-secondary:hover {
   background: var(--border);
+  transform: translateY(-1px);
+}
+
+.btn-secondary:active {
+  transform: scale(0.95);
+  filter: brightness(0.9);
 }
 
 .step-dot {
