@@ -1110,17 +1110,25 @@ btnViewMode.addEventListener("click", (e) => {
 });
 
 let moreMenuVisible = false;
+let moreMenuTimer: ReturnType<typeof setTimeout> | undefined;
 
 function showMoreMenu(): void {
+  if (moreMenuTimer) { clearTimeout(moreMenuTimer); moreMenuTimer = undefined; }
   moreMenuVisible = true;
   moreMenu.classList.remove("hidden");
+  moreMenu.style.opacity = "";
+  moreMenu.style.transform = "";
   animate(moreMenu, { opacity: [0, 1], scale: [0.93, 1], y: [-10, 0] }, { duration: 0.2, ease: easeInOut });
 }
 function hideMoreMenu(): void {
   if (!moreMenuVisible) return;
   moreMenuVisible = false;
+  if (moreMenuTimer) { clearTimeout(moreMenuTimer); }
   animate(moreMenu, { opacity: [1, 0], scale: [1, 0.95], y: [0, -6] }, { duration: 0.12, ease: easeInOut });
-  setTimeout(() => moreMenu.classList.add("hidden"), 150);
+  moreMenuTimer = setTimeout(() => {
+    moreMenu.classList.add("hidden");
+    moreMenuTimer = undefined;
+  }, 150);
 }
 
 btnMore.addEventListener("click", (e) => {
