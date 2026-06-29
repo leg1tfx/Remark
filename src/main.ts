@@ -1050,6 +1050,16 @@ document.getElementById("btn-settings")!.addEventListener("click", () => {
   refreshModelSuggestions();
 });
 
+document.getElementById("btn-register-assoc")!.addEventListener("click", async () => {
+  try {
+    const exePath = await invoke<string>("register_file_assoc");
+    setStatus("Registered: .md files open with Remark");
+    showSuccessOverlay("File association set");
+  } catch (err) {
+    setStatus(`Error: ${err}`);
+  }
+});
+
 document.getElementById("setting-install-ollama")?.addEventListener("click", () => {
   const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
   hideModal(settingsModal, inner);

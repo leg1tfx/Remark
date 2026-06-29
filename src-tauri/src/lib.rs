@@ -204,6 +204,40 @@ async fn pull_ollama_model(model: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn register_file_assoc() -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("{}", e))?;
+    let exe_path = exe.to_string_lossy().to_string();
+
+    use std::process::Command;
+
+    // Register app command path
+    Command::new("reg")
+        .args(&["add", "HKCU\\Software\\Classes\\Remark.md\\shell\\open\\command", "/ve", "/d", &exe_path, "/f"])
+        .status()
+        .map_err(|e| format!("{}", e))?;
+
+    // Set friendly name
+    Command::new("reg")
+        .args(&["add", "HKCU\\Software\\Classes\\Remark.md", "/ve", "/d", "Markdown-Datei (Remark)", "/f"])
+        .status()
+        .map_err(|e| format!("{}", e))?;
+
+    // Associate .md extension
+    Command::new("reg")
+        .args(&["add", "HKCU\\Software\\Classes\\.md", "/ve", "/d", "Remark.md", "/f"])
+        .status()
+        .map_err(|e| format!("{}", e))?;
+
+    // Also .markdown
+    Command::new("reg")
+        .args(&["add", "HKCU\\Software\\Classes\\.markdown", "/ve", "/d", "Remark.md", "/f"])
+        .status()
+        .map_err(|e| format!("{}", e))?;
+
+    Ok(exe_path)
+}
+
+#[tauri::command]
 fn file_exists(path: String) -> bool {
     PathBuf::from(&path).exists()
 }
@@ -277,6 +311,7 @@ pub fn run(initial_file: Option<String>) {
             file_exists,
             check_update,
             get_initial_file,
+            register_file_assoc,
             read_settings,
             save_settings,
             check_ollama,
