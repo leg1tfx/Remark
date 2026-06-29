@@ -141,6 +141,28 @@ html, body {
   left: 18px;
 }
 
+.modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 15px;
+  transition: all 0.15s ease;
+}
+.modal-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.modal-close:active {
+  transform: scale(0.85);
+}
+
 .settings-panel {
   background: var(--surface-alpha);
   backdrop-filter: blur(16px);

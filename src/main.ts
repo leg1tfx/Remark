@@ -81,8 +81,6 @@ const ollamaDialog = document.getElementById("ollama-dialog")!;
 const ollamaSpinnerArc = document.getElementById("ollama-spinner-arc")!;
 const ollamaDialogText = document.getElementById("ollama-dialog-text")!;
 const ollamaDialogSub = document.getElementById("ollama-dialog-sub")!;
-const ollamaCancel = document.getElementById("ollama-cancel")!;
-
 const successOverlay = document.getElementById("success-overlay")!;
 const successToast = document.getElementById("success-toast")!;
 const successBackdrop = document.getElementById("success-backdrop")!;
@@ -162,8 +160,13 @@ function animateSpinner(el: SVGElement, loop = true): void {
 }
 
 function hideSuccessOverlay(): void {
-  animate(successToast, { opacity: [1, 0], scale: [1, 0.95] }, { duration: 0.15, ease: easeInOut, onFinish: () => successOverlay.classList.add("hidden") });
-  animate(successOverlay, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut });
+  try {
+    animate(successToast, { opacity: [1, 0], scale: [1, 0.95] }, { duration: 0.15, ease: easeInOut });
+    animate(successOverlay, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut });
+    setTimeout(() => successOverlay.classList.add("hidden"), 200);
+  } catch {
+    successOverlay.classList.add("hidden");
+  }
 }
 
 async function showSuccessOverlay(msg: string): Promise<void> {
@@ -406,7 +409,6 @@ async function formatWithOllama(): Promise<void> {
   const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
   showModal(ollamaDialog, inner);
   ollamaDialogSub.classList.add("hidden");
-  ollamaCancel.classList.add("hidden");
   ollamaDialogText.textContent = "Connecting to AI...";
   ollamaDialogSub.textContent = "";
   animateSpinner(ollamaSpinnerArc as unknown as SVGSVGElement);
@@ -1113,6 +1115,10 @@ ollamaDialog.addEventListener("click", (e) => {
     hideModal(ollamaDialog, inner);
   }
 });
+document.getElementById("ollama-close")!.addEventListener("click", () => {
+  const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
+  hideModal(ollamaDialog, inner);
+});
 
 ollamaSetupBackdrop.addEventListener("click", hideOllamaSetup);
 ollamaSetupClose.addEventListener("click", hideOllamaSetup);
@@ -1168,6 +1174,9 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !ollamaDialog.classList.contains("hidden")) {
     const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
     hideModal(ollamaDialog, inner);
+  }
+  if (e.key === "Escape" && !ollamaSetup.classList.contains("hidden")) {
+    hideOllamaSetup();
   }
 
   // Tab switching with Ctrl+Tab / Ctrl+Shift+Tab

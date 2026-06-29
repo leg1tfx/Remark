@@ -167,7 +167,7 @@
         <div class="settings-panel relative w-full max-w-md mx-4 rounded-xl shadow-xl border overflow-hidden">
           <div class="flex items-center justify-between px-5 py-3 border-b">
             <h2 class="text-base font-semibold">Settings</h2>
-            <button id="settings-close" class="toolbar-btn !px-2 !py-1" title="Close">✕</button>
+            <button id="settings-close" class="modal-close" title="Close">✕</button>
           </div>
           <div class="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
             <div>
@@ -209,17 +209,22 @@
 
       <!-- Ollama Dialog -->
       <div id="ollama-dialog" class="fixed inset-0 z-40 hidden items-center justify-center">
-        <div id="ollama-backdrop" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
-        <div class="settings-panel relative w-full max-w-sm mx-4 rounded-xl shadow-xl border overflow-hidden p-6 text-center">
-          <div class="flex items-center justify-center mb-4">
-            <svg id="ollama-spinner" class="w-8 h-8" viewBox="0 0 32 32" fill="none" stroke="var(--accent)" stroke-width="3">
-              <circle cx="16" cy="16" r="13" stroke-dasharray="80" stroke-dashoffset="0" stroke="var(--border)" stroke-width="3" fill="none"/>
-              <circle id="ollama-spinner-arc" cx="16" cy="16" r="13" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" stroke="var(--accent)" stroke-width="3" fill="none"/>
-            </svg>
+        <div id="ollama-backdrop" class="absolute inset-0 bg-black/40"></div>
+        <div class="settings-panel relative w-full max-w-sm mx-4 rounded-xl shadow-xl border overflow-hidden">
+          <div class="flex items-center justify-between px-5 py-3 border-b">
+            <h2 class="text-base font-semibold">AI Formatting</h2>
+            <button id="ollama-close" class="modal-close" title="Close">✕</button>
           </div>
-          <p id="ollama-dialog-text" class="text-sm font-medium">Connecting to AI...</p>
-          <p id="ollama-dialog-sub" class="text-xs text-muted mt-1 hidden"></p>
-          <button id="ollama-cancel" class="text-xs text-accent hover:underline mt-4 hidden">Cancel</button>
+          <div class="p-6 text-center">
+            <div class="flex items-center justify-center mb-4">
+              <svg id="ollama-spinner" class="w-8 h-8" viewBox="0 0 32 32" fill="none" stroke="var(--accent)" stroke-width="3">
+                <circle cx="16" cy="16" r="13" stroke-dasharray="80" stroke-dashoffset="0" stroke="var(--border)" stroke-width="3" fill="none"/>
+                <circle id="ollama-spinner-arc" cx="16" cy="16" r="13" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" stroke="var(--accent)" stroke-width="3" fill="none"/>
+              </svg>
+            </div>
+            <p id="ollama-dialog-text" class="text-sm font-medium">Connecting to AI...</p>
+            <p id="ollama-dialog-sub" class="text-xs text-muted mt-1 hidden"></p>
+          </div>
         </div>
       </div>
 
@@ -229,7 +234,7 @@
         <div class="settings-panel relative w-full max-w-md mx-4 rounded-xl shadow-xl border overflow-hidden">
           <div class="flex items-center justify-between px-5 py-3 border-b">
             <h2 class="text-base font-semibold">Set up AI</h2>
-            <button id="ollama-setup-close" class="toolbar-btn !p-1" title="Close">✕</button>
+            <button id="ollama-setup-close" class="modal-close" title="Close">✕</button>
           </div>
           <div class="p-5 space-y-4">
             <div class="flex items-center gap-1 text-xs text-muted">

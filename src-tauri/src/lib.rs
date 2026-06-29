@@ -105,15 +105,12 @@ async fn format_with_ollama(
     text: String,
 ) -> Result<String, String> {
     let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
-    let prompt = format!(
-        "Du bist ein Markdown-Formatter. Formatiere den folgenden Text als Markdown mit Überschriften, Listen und Absätzen. Gib NUR das formatierte Markdown zurück, keine Erklärung.\n\n{}",
-        text
-    );
     let body = serde_json::json!({
         "model": model,
-        "prompt": prompt,
+        "system": "You are a Markdown formatter. Reformat the user's text as clean Markdown using headings, lists and paragraphs. Return ONLY the reformatted Markdown. Do NOT add any extra text, commentary, or content outside the Markdown.",
+        "prompt": text,
         "stream": false,
-        "options": { "temperature": 0.1 }
+        "options": { "temperature": 0.05 }
     });
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
@@ -129,10 +126,23 @@ async fn format_with_ollama(
         .json()
         .await
         .map_err(|e| format!("Response parse error: {}", e))?;
-    data["response"]
+    let raw = data["response"]
         .as_str()
         .map(String::from)
-        .ok_or_else(|| "Empty response from Ollama".to_string())
+        .ok_or_else(|| "Empty response from Ollama".to_string())?;
+    // Strip any text before first ``` or # or word character after trimming
+    let trimmed = raw.trim();
+    // If model wrapped response in ```markdown ... ```, extract content
+    if let Some(start) = trimmed.rfind("```") {
+        let before = &trimmed[..start];
+        if let Some(end) = before.rfind("```") {
+            let inner = before[end + 3..].trim();
+            if !inner.is_empty() {
+                return Ok(inner.to_string());
+            }
+        }
+    }
+    Ok(raw)
 }
 
 #[tauri::command]
