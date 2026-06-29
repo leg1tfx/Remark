@@ -1,0 +1,40 @@
+/* Creamy Light Theme (default) */
+:root {
+  --bg: oklch(0.97 0.008 80);
+  --surface: oklch(0.95 0.01 85);
+  --text: oklch(0.25 0.02 50);
+  --text-secondary: oklch(0.5 0.02 50);
+  --text-tertiary: oklch(0.65 0.02 50);
+  --border: oklch(0.87 0.015 75);
+  --hover: oklch(0.9 0.015 80);
+  --accent: #c4845a;
+  --accent-hover: #b8734a;
+  --accent-bg: oklch(0.92 0.03 60);
+  --code-bg: oklch(0.92 0.01 80);
+  --shadow: 0 1px 3px oklch(0 0 0 / 0.08);
+}
+
+/* Dark Theme */
+.dark {
+  --bg: oklch(0.18 0.01 60);
+  --surface: oklch(0.22 0.01 60);
+  --text: oklch(0.88 0.01 60);
+  --text-secondary: oklch(0.65 0.01 60);
+  --text-tertiary: oklch(0.5 0.01 60);
+  --border: oklch(0.3 0.01 60);
+  --hover: oklch(0.26 0.01 60);
+  --accent: #d4946a;
+  --accent-hover: #e0a47a;
+  --accent-bg: oklch(0.28 0.03 55);
+  --code-bg: oklch(0.14 0.01 60);
+  --shadow: 0 1px 3px oklch(0 0 0 / 0.3);
+}
+
+* {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
