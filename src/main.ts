@@ -113,19 +113,21 @@ const successCircle = document.getElementById("success-circle")!;
 const successCheck = document.getElementById("success-check")!;
 const successMsgEl = document.getElementById("success-text")!;
 
-const btnView = document.getElementById("btn-view")!;
-const btnEdit = document.getElementById("btn-edit")!;
-const btnSplit = document.getElementById("btn-split")!;
 const btnOpen = document.getElementById("btn-open")!;
 const btnSave = document.getElementById("btn-save")!;
 const btnTheme = document.getElementById("btn-theme")!;
-const btnFind = document.getElementById("btn-find")!;
-const btnOllama = document.getElementById("btn-ollama")!;
+const btnViewMode = document.getElementById("btn-view-mode")!;
+const iconViewMode = document.getElementById("icon-view-mode")!;
+const btnMore = document.getElementById("btn-more")!;
+const moreMenu = document.getElementById("more-menu")!;
+const menuFind = document.getElementById("menu-find")!;
+const menuFocus = document.getElementById("menu-focus")!;
+const menuOllama = document.getElementById("menu-ollama")!;
+const menuExportHtml = document.getElementById("menu-export-html")!;
+const menuExportPdf = document.getElementById("menu-export-pdf")!;
 
 const btnSidebar = document.getElementById("btn-sidebar")!;
-const btnFocus = document.getElementById("btn-focus")!;
 const btnNewTab = document.getElementById("btn-new-tab")!;
-const btnExport = document.getElementById("btn-export")!;
 const tabList = document.getElementById("tab-list")!;
 const tabBar = document.getElementById("tab-bar")!;
 const sidebar = document.getElementById("sidebar")!;
@@ -133,9 +135,6 @@ const sidebarFiles = document.getElementById("sidebar-files")!;
 const sidebarToc = document.getElementById("sidebar-toc")!;
 const sidebarPanelFiles = document.getElementById("sidebar-panel-files")!;
 const sidebarPanelToc = document.getElementById("sidebar-panel-toc")!;
-const exportMenu = document.getElementById("export-menu")!;
-const exportHtmlBtn = document.getElementById("export-html")!;
-const exportPdfBtn = document.getElementById("export-pdf")!;
 
 const themeIcon = document.getElementById("theme-icon")!;
 
@@ -664,11 +663,23 @@ function onContentChange(content: string): void {
   runLint();
 }
 
+function updateViewModeIcon(): void {
+  const mode = state.viewMode;
+  if (mode === "view") {
+    iconViewMode.innerHTML = `<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>`;
+    btnViewMode.title = "Preview (click: Edit, Ctrl+click: Split)";
+  } else if (mode === "edit") {
+    iconViewMode.innerHTML = `<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>`;
+    btnViewMode.title = "Editor (click: Preview, Ctrl+click: Split)";
+  } else {
+    iconViewMode.innerHTML = `<rect x="3" y="3" width="7" height="14" rx="1"/><rect x="14" y="3" width="7" height="14" rx="1"/><line x1="1" y1="21" x2="23" y2="21"/>`;
+    btnViewMode.title = "Split (click: Preview, Ctrl+click: Edit)";
+  }
+}
+
 function setViewMode(mode: ViewMode): void {
   state.viewMode = mode;
-  btnView.classList.toggle("active", mode === "view");
-  btnEdit.classList.toggle("active", mode === "edit");
-  btnSplit.classList.toggle("active", mode === "split");
+  updateViewModeIcon();
 
   const edWasHidden = editorPanel.classList.contains("hidden");
   const pvWasHidden = previewPanel.classList.contains("hidden");
@@ -944,7 +955,6 @@ addEventListener("toc-update", ((e: CustomEvent) => {
 function toggleTypewriter(): void {
   state.typewriterMode = !state.typewriterMode;
   document.getElementById("editor-container")!.classList.toggle("typewriter-mode", state.typewriterMode);
-  btnFocus.classList.toggle("active", state.typewriterMode);
   setStatus(state.typewriterMode ? "Focus mode on" : "Focus mode off");
 }
 
@@ -1047,17 +1057,11 @@ addEventListener("editor-change", ((e: CustomEvent) => {
 
 btnOpen.addEventListener("click", () => openFile());
 btnSave.addEventListener("click", () => saveFile());
-btnView.addEventListener("click", () => setViewMode("view"));
-btnEdit.addEventListener("click", () => setViewMode("edit"));
-btnSplit.addEventListener("click", () => setViewMode("split"));
 btnTheme.addEventListener("click", toggleTheme);
-btnFind.addEventListener("click", showFindBar);
-btnOllama.addEventListener("click", formatWithOllama);
 btnSidebar.addEventListener("click", () => {
   state.sidebarOpen = !state.sidebarOpen;
   updateSidebarVisibility();
 });
-btnFocus.addEventListener("click", toggleTypewriter);
 btnNewTab.addEventListener("click", () => {
   addTab(null, "");
   setViewMode("edit");
@@ -1067,18 +1071,37 @@ btnNewTab.addEventListener("click", () => {
   setStatus("New tab");
 });
 
-btnExport.addEventListener("click", (e) => {
-  const rect = (e.target as HTMLElement).closest("button")!.getBoundingClientRect();
-  exportMenu.style.top = `${rect.bottom + 4}px`;
-  exportMenu.style.left = `${rect.left}px`;
-  exportMenu.classList.toggle("hidden");
+// View mode cycling: view → edit → split → view ...
+btnViewMode.addEventListener("click", (e) => {
+  if (e.ctrlKey || e.metaKey) {
+    // Ctrl+click goes to split
+    setViewMode("split");
+  } else {
+    // Normal click cycles: view→edit→split→view
+    const modes: ViewMode[] = ["view", "edit", "split"];
+    const idx = modes.indexOf(state.viewMode);
+    setViewMode(modes[(idx + 1) % 3]);
+  }
 });
-exportHtmlBtn.addEventListener("click", () => { exportMenu.classList.add("hidden"); exportHTML(); });
-exportPdfBtn.addEventListener("click", () => { exportMenu.classList.add("hidden"); exportPDF(); });
+
+// More menu
+btnMore.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const rect = (e.target as HTMLElement).closest("button")!.getBoundingClientRect();
+  moreMenu.style.top = `${rect.bottom + 4}px`;
+  moreMenu.style.left = `${rect.left}px`;
+  moreMenu.classList.toggle("hidden");
+});
+
+menuFind.addEventListener("click", () => { moreMenu.classList.add("hidden"); showFindBar(); });
+menuFocus.addEventListener("click", () => { moreMenu.classList.add("hidden"); toggleTypewriter(); });
+menuOllama.addEventListener("click", () => { moreMenu.classList.add("hidden"); formatWithOllama(); });
+menuExportHtml.addEventListener("click", () => { moreMenu.classList.add("hidden"); exportHTML(); });
+menuExportPdf.addEventListener("click", () => { moreMenu.classList.add("hidden"); exportPDF(); });
 
 document.addEventListener("click", (e) => {
-  if (!exportMenu.contains(e.target as Node) && e.target !== btnExport) {
-    exportMenu.classList.add("hidden");
+  if (!moreMenu.contains(e.target as Node) && e.target !== btnMore && !(e.target as HTMLElement).closest("#btn-more")) {
+    moreMenu.classList.add("hidden");
   }
 });
 
@@ -1163,6 +1186,7 @@ document.addEventListener("keydown", (e) => {
   if (ctrl && e.shiftKey && e.key === "V") { e.preventDefault(); setViewMode("view"); }
   if (ctrl && e.key === "e") { e.preventDefault(); setViewMode("edit"); }
   if (ctrl && e.shiftKey && e.key === "E") { e.preventDefault(); setViewMode("split"); }
+  if (e.key === "Escape" && !moreMenu.classList.contains("hidden")) { moreMenu.classList.add("hidden"); }
   if (ctrl && e.key === "f") { e.preventDefault(); showFindBar(); }
   if (ctrl && e.key === "n") { e.preventDefault(); btnNewTab.click(); }
   if (ctrl && e.shiftKey && e.key === "b") { e.preventDefault(); btnSidebar.click(); }

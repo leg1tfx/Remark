@@ -19,40 +19,45 @@ html, body {
 }
 
 #toolbar {
-  background: var(--surface);
-  border-color: var(--border);
+  background: var(--surface-alpha);
+  backdrop-filter: blur(12px);
+  border-color: var(--border-alpha);
 }
 
 .toolbar-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  justify-content: center;
+  padding: 4px;
   border-radius: 6px;
-  font-size: 13px;
   color: var(--text-secondary);
   background: transparent;
   border: none;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.1s ease, color 0.1s ease, transform 0.08s ease;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .toolbar-btn:hover {
   background: var(--hover);
   color: var(--text);
+  transform: translateY(-1px);
 }
 
 .toolbar-btn:active {
-  transform: scale(0.92);
+  transform: scale(0.85);
+  background: var(--border);
+  filter: brightness(0.9);
 }
 
 .toolbar-btn.active {
   background: var(--accent-bg);
   color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .toolbar-btn svg {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
 }
 
@@ -120,8 +125,10 @@ html, body {
 }
 
 .settings-panel {
-  background: var(--surface);
-  border-color: var(--border);
+  background: var(--surface-alpha);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-alpha);
+  box-shadow: 0 16px 48px oklch(0 0 0 / 0.2);
 }
 
 #settings-modal,
@@ -361,16 +368,16 @@ select.input {
 /* === Download Overlay === */
 #download-overlay {
   display: block;
-  z-index: 60;
+  z-index: 100;
 }
 #download-overlay.hidden {
   display: none !important;
 }
 .download-card {
-  background: var(--surface);
-  border-color: var(--border);
-  box-shadow: 0 4px 20px oklch(0 0 0 / 0.18);
-  backdrop-filter: blur(8px);
+  background: var(--surface-alpha);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-alpha);
+  box-shadow: 0 12px 32px oklch(0 0 0 / 0.15);
 }
 .dl-spinner {
   width: 20px;
@@ -392,9 +399,10 @@ select.input {
   display: none;
 }
 .toast-notification {
-  background: var(--surface);
-  border-color: var(--border);
-  box-shadow: 0 8px 32px oklch(0 0 0 / 0.2);
+  background: var(--surface-alpha);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-alpha);
+  box-shadow: 0 16px 48px oklch(0 0 0 / 0.2);
 }
 
 /* === Tab Bar === */
@@ -560,11 +568,16 @@ select.input {
   opacity: 1;
 }
 
-/* === Export Menu === */
-#export-menu {
-  background: var(--surface);
-  border-color: var(--border);
+/* === More Menu === */
+#more-menu {
+  background: var(--surface-alpha);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-alpha);
+  box-shadow: 0 12px 32px oklch(0 0 0 / 0.15);
   z-index: 100;
+}
+#more-menu.hidden {
+  display: none;
 }
 
 /* === Heading anchor === */
