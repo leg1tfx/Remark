@@ -138,16 +138,29 @@ function showWithFade(el: HTMLElement, duration = 0.2): void {
   animate(el, { opacity: [0, 1] }, { duration, ease: easeInOut });
 }
 
+const hideTimers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
+
+function clearHideTimer(el: HTMLElement): void {
+  const t = hideTimers.get(el);
+  if (t) { clearTimeout(t); hideTimers.delete(el); }
+}
+
+function setHideTimer(el: HTMLElement, fn: () => void, ms: number): void {
+  clearHideTimer(el);
+  hideTimers.set(el, setTimeout(() => { hideTimers.delete(el); fn(); }, ms));
+}
+
 function hideWithFade(el: HTMLElement, duration = 0.15): void {
   try {
     animate(el, { opacity: [1, 0] }, { duration, ease: easeInOut });
-    setTimeout(() => el.classList.add("hidden"), (duration * 1000) + 50);
+    setHideTimer(el, () => el.classList.add("hidden"), (duration * 1000) + 50);
   } catch {
     el.classList.add("hidden");
   }
 }
 
 function showModal(el: HTMLElement, inner: HTMLElement): void {
+  clearHideTimer(el);
   el.style.opacity = "0";
   inner.style.opacity = "0";
   inner.style.transform = "scale(0.88) translateY(30px)";
@@ -161,7 +174,7 @@ function hideModal(el: HTMLElement, inner: HTMLElement): void {
   try {
     animate(inner, { opacity: [1, 0], scale: [1, 0.93], y: [0, -16] }, { duration: 0.15, ease: easeInOut });
     animate(el, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut });
-    setTimeout(() => {
+    setHideTimer(el, () => {
       el.classList.add("hidden");
       el.style.opacity = "";
       inner.style.opacity = "";
@@ -180,7 +193,7 @@ function hideSuccessOverlay(): void {
   try {
     animate(successToast, { opacity: [1, 0], scale: [1, 0.9], y: [0, -20] }, { duration: 0.18, ease: easeInOut });
     animate(successOverlay, { opacity: [1, 0] }, { duration: 0.18, ease: easeInOut });
-    setTimeout(() => {
+    setHideTimer(successOverlay, () => {
       successOverlay.classList.add("hidden");
       successOverlay.style.opacity = "";
       successToast.style.opacity = "";
@@ -193,6 +206,7 @@ function hideSuccessOverlay(): void {
 
 async function showSuccessOverlay(msg: string): Promise<void> {
   try {
+    clearHideTimer(successOverlay);
     successMsgEl.textContent = msg;
     successOverlay.style.opacity = "0";
     successToast.style.opacity = "0";
@@ -809,6 +823,7 @@ function toggleTheme(): void {
 
 // === Find / Search ===
 function showFindBar(): void {
+  clearHideTimer(findBar);
   findBar.classList.remove("hidden");
   animate(findBar, { height: ["0px", "36px"], opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
   findInput.focus();
@@ -819,7 +834,7 @@ function showFindBar(): void {
 function hideFindBar(): void {
   try {
     animate(findBar, { opacity: [1, 0] }, { duration: 0.1, ease: easeInOut });
-    setTimeout(() => findBar.classList.add("hidden"), 150);
+    setHideTimer(findBar, () => findBar.classList.add("hidden"), 150);
   } catch {
     findBar.classList.add("hidden");
   }
@@ -1271,7 +1286,7 @@ document.addEventListener("keydown", (e) => {
 function hideDropOverlay(): void {
   try {
     animate(dropOverlay, { opacity: [1, 0] }, { duration: 0.12, ease: easeInOut });
-    setTimeout(() => dropOverlay.classList.add("hidden"), 160);
+    setHideTimer(dropOverlay, () => dropOverlay.classList.add("hidden"), 160);
   } catch {
     dropOverlay.classList.add("hidden");
   }
@@ -1279,6 +1294,7 @@ function hideDropOverlay(): void {
 
 getCurrentWindow().onDragDropEvent(async (event) => {
   if (event.payload.type === "over") {
+    clearHideTimer(dropOverlay);
     dropOverlay.classList.remove("hidden");
     animate(dropOverlay, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
     animate(dropContent, { scale: [0.92, 1] }, { duration: 0.2, ease: spring() });
