@@ -29,6 +29,7 @@ export interface Settings {
   sessionTabs?: { file: string | null; scrollTop: number }[];
   sessionActiveTab?: number;
   ollamaSetupComplete?: boolean;
+  language?: string;
 }
 
 export interface FileEntry {

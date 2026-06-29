@@ -40,6 +40,7 @@ const defaultSettings: Settings = {
   recentFiles: [],
   splitRatio: 0.5,
   ollamaSetupComplete: false,
+  language: "en",
 };
 
 let settings: Settings = { ...defaultSettings };
@@ -57,6 +58,7 @@ const modifiedDot = document.getElementById("modified-dot")!;
 const statusText = document.getElementById("status-text")!;
 const statusOllama = document.getElementById("status-ollama")!;
 const statusFilenameBottom = document.getElementById("status-filename-bottom")!;
+const statusLanguage = document.getElementById("status-language")! as HTMLSelectElement;
 const wordCountEl = document.getElementById("word-count")!;
 const resizeHandle = document.getElementById("resize-handle")!;
 const btnLint = document.getElementById("btn-lint")!;
@@ -356,6 +358,7 @@ function applySettingsUI(): void {
   (document.getElementById("setting-ollama-endpoint") as HTMLInputElement).value = settings.ollamaEndpoint;
   (document.getElementById("setting-ollama-model") as HTMLSelectElement).value = settings.ollamaModel;
   (document.getElementById("setting-autosave") as HTMLInputElement).value = String(settings.autoSaveInterval);
+  statusLanguage.value = settings.language || "en";
   updateOllamaStatusBar();
   restartAutoSave();
 }
@@ -1505,6 +1508,12 @@ document.addEventListener("click", (e) => {
   if (e.target !== btnLint && !lintPanel.contains(e.target as Node)) {
     lintPanel.classList.add("hidden");
   }
+});
+
+// === Language ===
+statusLanguage.addEventListener("change", () => {
+  settings.language = statusLanguage.value;
+  saveSettingsFn();
 });
 
 // === Init ===
