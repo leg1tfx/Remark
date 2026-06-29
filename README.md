@@ -1,54 +1,62 @@
 # Remark
 
-Ein schlanker, nativer Markdown-Editor mit Live-Vorschau und KI-Formatierung via [Ollama](https://ollama.com).
+A lightweight, native Markdown editor with live preview and AI formatting via [Ollama](https://ollama.com).
 
 ## Features
 
-- **Drei Ansichten** – Editor, Vorschau oder Split-View nebeneinander
-- **Syntax-Highlighting** – Code-Blöcke in über 190 Sprachen via highlight.js
-- **Auto-Save** – konfigurierbares Intervall (Standard: 2s)
-- **Datei-Integration** – Doppelklick auf `.md`-Dateien, Drag & Drop
-- **Dark/Light-Theme** – warmes, cremiges Design
-- **KI-Formatierung** – Markdown mit lokalem Ollama-Modell formatieren lassen
-- **Erstsetup-Assistent** – Ollama automatisch herunterladen, installieren und Modell pullen
-- **Find/Search** – Volltextsuche im Editor (Strg+F)
+- **Three views** – Editor, Preview, or side-by-side Split view
+- **Syntax highlighting** – Code blocks in 190+ languages via highlight.js
+- **Auto-save** – Configurable interval (default: 2s)
+- **File integration** – Double-click `.md` files, drag & drop
+- **Dark/Light theme** – Warm, creamy design
+- **AI formatting** – Format Markdown with a local Ollama model
+- **First-run wizard** – Download, install Ollama and pull a model automatically
+- **Find/Search** – Full-text search in editor (Ctrl+F)
 
 ## Quick Start
 
 ```bash
-# Abhängigkeiten installieren
 npm install
-
-# Entwicklung starten
-npm run tauri dev
-
-# Produktions-Build (MSI/NSIS)
-npm run build
-npm run tauri build
+npm run tauri dev       # development
+npm run build           # frontend build
+npm run tauri build     # production build (MSI/NSIS)
 ```
 
-## Tech-Stack
+## Tech Stack
 
-| Komponente | Technologie |
+| Component | Technology |
 |---|---|
-| Desktop-Framework | [Tauri 2](https://v2.tauri.app) (Rust + WebView2) |
+| Desktop framework | [Tauri 2](https://v2.tauri.app) (Rust + WebView2) |
 | Frontend | Vanilla TypeScript, [Tailwind CSS v4](https://tailwindcss.com) |
 | Editor | [CodeMirror 6](https://codemirror.net) |
-| Markdown-Rendering | [marked](https://marked.js.org) + [DOMPurify](https://github.com/cure53/DOMPurify) |
-| Syntax-Highlighting | [highlight.js](https://highlightjs.org) |
-| Animationen | [motion](https://motion.dev) (Standalone Framer Motion) |
-| KI-Backend | [Ollama](https://ollama.com) (lokal, REST-API über Rust-Backend) |
+| Markdown rendering | [marked](https://marked.js.org) + [DOMPurify](https://github.com/cure53/DOMPurify) |
+| Syntax highlighting | [highlight.js](https://highlightjs.org) |
+| Animations | [motion](https://motion.dev) (standalone Framer Motion) |
+| AI backend | [Ollama](https://ollama.com) (local, REST API via Rust backend) |
 
-## KI-Formatierung
+## AI Formatting
 
-Remark kann Text über ein lokales Ollama-Modell als Markdown formatieren lassen.
+Remark can format text as Markdown through a local Ollama model.
 
-1. In den Einstellungen **KI-Formatierung aktivieren**
-2. (Optional) Ein Modell auswählen – empfohlen: `llama3.2:3b`
-3. Text schreiben und auf das KI-Icon klicken
+1. Enable **AI Formatting** in settings
+2. Pick a model (recommended: `llama3.2:3b`)
+3. Write text and click the AI icon
 
-Fehlt Ollama, öffnet sich beim ersten Start ein Assistent, der alles automatisch einrichtet.
+If Ollama is missing, a setup wizard will guide you through installation on first launch.
 
-## Lizenz
+## Roadmap Ideas
+
+- Multi-tab support
+- Export to PDF / HTML
+- File tree sidebar (project browsing)
+- Image paste from clipboard
+- Table of contents generation
+- KaTeX math / Mermaid diagram rendering
+- Focus / typewriter mode
+- Word count & reading time
+- Spell checking
+- Custom user CSS for preview
+
+## License
 
 MIT
