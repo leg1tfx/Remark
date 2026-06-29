@@ -79,9 +79,9 @@ const settingsClose = document.getElementById("settings-close")!;
 const ollamaStatus = document.getElementById("ollama-status")!;
 
 const ollamaDialog = document.getElementById("ollama-dialog")!;
-const ollamaSpinnerArc = document.getElementById("ollama-spinner-arc")!;
 const ollamaDialogText = document.getElementById("ollama-dialog-text")!;
 const ollamaDialogSub = document.getElementById("ollama-dialog-sub")!;
+const ollamaSpinnerEl = document.getElementById("ollama-spinner")!;
 const successOverlay = document.getElementById("success-overlay")!;
 const successToast = document.getElementById("success-toast")!;
 const successBackdrop = document.getElementById("success-backdrop")!;
@@ -99,9 +99,9 @@ const setupDownloadText = document.getElementById("setup-download-text")!;
 const setupProgressText = document.getElementById("setup-progress-text")!;
 const setupPullText = document.getElementById("setup-pull-text")!;
 const setupErrorText = document.getElementById("setup-error-text")!;
-const setupSpinnerArc = document.getElementById("setup-spinner-arc")!;
-const setupSpinnerArc2 = document.getElementById("setup-spinner-arc2")!;
-const setupSpinnerArc3 = document.getElementById("setup-spinner-arc3")!;
+const setupSpinner1 = document.getElementById("setup-spinner-1")!;
+const setupSpinner2 = document.getElementById("setup-spinner-2")!;
+const setupSpinner3 = document.getElementById("setup-spinner-3")!;
 const successCircle = document.getElementById("success-circle")!;
 const successCheck = document.getElementById("success-check")!;
 const successMsgEl = document.getElementById("success-text")!;
@@ -417,8 +417,8 @@ async function formatWithOllama(): Promise<void> {
   ollamaDialogSub.classList.add("hidden");
   ollamaDialogText.textContent = "Connecting to AI...";
   ollamaDialogSub.textContent = "";
-  if (ollamaSpinnerArc) ollamaSpinnerArc.style.display = "";
-  animateSpinner(ollamaSpinnerArc as unknown as SVGSVGElement);
+  ollamaSpinnerEl.style.display = "";
+  animateSpinner(ollamaSpinnerEl as unknown as SVGSVGElement);
 
   const running = await checkOllamaStatus();
   if (!running) {
@@ -438,7 +438,7 @@ async function formatWithOllama(): Promise<void> {
     });
     ollamaDialogText.textContent = "Done!";
     ollamaDialogSub.classList.add("hidden");
-    if (ollamaSpinnerArc) ollamaSpinnerArc.style.display = "none";
+    ollamaSpinnerEl.style.display = "none";
     await new Promise((r) => setTimeout(r, 800));
     hideModal(ollamaDialog, inner);
     if (tab) {
@@ -507,21 +507,21 @@ async function startOllamaSetup(): Promise<void> {
     setupProgressBar.style.width = "0%";
     setupDownloadText.textContent = "Downloading Ollama…";
     setupProgressText.textContent = "Starting download…";
-    animateSpinner(setupSpinnerArc as unknown as SVGSVGElement);
+    animateSpinner(setupSpinner1 as unknown as SVGSVGElement);
 
     const path = await invoke<string>("download_ollama");
     setupProgressBar.style.width = "100%";
     setupProgressText.textContent = "Download complete";
 
     goToSetupStep(3);
-    animateSpinner(setupSpinnerArc2 as unknown as SVGSVGElement);
+    animateSpinner(setupSpinner2 as unknown as SVGSVGElement);
     await invoke("install_ollama", { path });
 
     await waitForOllamaReady();
 
     goToSetupStep(4);
     setupPullText.textContent = `Loading ${model}…`;
-    animateSpinner(setupSpinnerArc3 as unknown as SVGSVGElement);
+    animateSpinner(setupSpinner3 as unknown as SVGSVGElement);
     await invoke("pull_ollama_model", { model });
 
     settings.ollamaSetupComplete = true;

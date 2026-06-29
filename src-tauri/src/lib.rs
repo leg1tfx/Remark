@@ -107,7 +107,7 @@ async fn format_with_ollama(
     let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
     let body = serde_json::json!({
         "model": model,
-        "system": "You are a Markdown formatter. Reformat the user's text as clean Markdown using headings, lists and paragraphs. Return ONLY the reformatted Markdown. Do NOT add any extra text, commentary, or content outside the Markdown.",
+        "system": "You are a Markdown formatting tool. Output ONLY the reformatted Markdown. Never include greetings, explanations, or commentary. Never say 'Here is', 'I've', 'Certainly', or any preamble. Output the Markdown directly with no prefix or suffix.",
         "prompt": text,
         "stream": false,
         "options": { "temperature": 0.05 }
@@ -133,10 +133,11 @@ async fn format_with_ollama(
     Ok(clean_ollama_output(&raw))
 }
 
-/// Strip preamble sentences and code fences from Ollama output.
+/// Aggressively clean Ollama output: strip code fences and any preamble text.
 fn clean_ollama_output(raw: &str) -> String {
     let trimmed = raw.trim();
-    // If model wrapped response in ```markdown ... ```, extract content
+
+    // 1. Recursively extract from ``` blocks
     if let Some(start) = trimmed.rfind("```") {
         let before = &trimmed[..start];
         if let Some(end) = before.rfind("```") {
@@ -147,44 +148,34 @@ fn clean_ollama_output(raw: &str) -> String {
         }
     }
 
-    // Strip common preamble sentences
-    let lower = trimmed.to_lowercase();
-    let preambles = [
-        "here is your",
-        "here's your",
-        "here is the",
-        "here's the",
-        "certainly",
-        "sure, here",
-        "of course",
-        "i've reformatted",
-        "i have reformatted",
-        "i've formatted",
-        "i have formatted",
-        "i've rewritten",
-        "i have rewritten",
-        "below is",
-        "here is my",
-        "here's my",
-        "here you go",
-    ];
-    let has_preamble = preambles.iter().any(|p| lower.starts_with(p));
-    if has_preamble {
-        if let Some(pos) = trimmed.find("\n\n") {
-            let after = trimmed[pos + 2..].trim();
-            if !after.is_empty() {
-                return after.to_string();
-            }
-        }
-        if let Some(pos) = trimmed.find('\n') {
-            let after = trimmed[pos + 1..].trim();
-            if !after.is_empty() {
-                return after.to_string();
-            }
-        }
+    // 2. Strip any preamble lines before actual markdown content.
+    //    A line is "markdown content" if it starts with a heading, list,
+    //    blockquote, code fence, table, number, is >100 chars, or contains a URL.
+    let lines: Vec<&str> = trimmed.lines().collect();
+    let mut start = 0;
+    for (i, line) in lines.iter().enumerate() {
+        let l = line.trim();
+        if l.is_empty() { continue; }
+        if looks_like_markdown(l) { start = i; break; }
     }
+    let result = lines[start..].join("\n").trim().to_string();
+    if !result.is_empty() { return result; }
 
     trimmed.to_string()
+}
+
+fn looks_like_markdown(line: &str) -> bool {
+    line.starts_with('#')
+        || line.starts_with("- ")
+        || line.starts_with("* ")
+        || line.starts_with("+ ")
+        || line.starts_with("> ")
+        || line.starts_with("|")
+        || line.starts_with("```")
+        || line.starts_with('`')
+        || line.len() > 100
+        || line.contains("://")
+        || line.chars().next().map_or(false, |c| c.is_ascii_digit())
 }
 
 #[tauri::command]
