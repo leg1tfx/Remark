@@ -87,12 +87,6 @@ const successOverlay = document.getElementById("success-overlay")!;
 const successToast = document.getElementById("success-toast")!;
 const successBackdrop = document.getElementById("success-backdrop")!;
 
-const dlOverlay = document.getElementById("download-overlay")!;
-const dlTitle = document.getElementById("download-title")!;
-const dlStatus = document.getElementById("download-status")!;
-const dlBar = document.getElementById("download-progress-bar")!;
-const dlPercent = document.getElementById("download-percent")!;
-
 const ollamaSetup = document.getElementById("ollama-setup")!;
 const ollamaSetupBackdrop = document.getElementById("ollama-setup-backdrop")!;
 const ollamaSetupClose = document.getElementById("ollama-setup-close")!;
@@ -190,27 +184,6 @@ async function showSuccessOverlay(msg: string): Promise<void> {
 }
 
 successBackdrop.addEventListener("click", hideSuccessOverlay);
-
-// === Download Overlay ===
-function showDownloadOverlay(title: string): void {
-  dlTitle.textContent = title;
-  dlStatus.textContent = "Starting…";
-  dlBar.style.width = "0%";
-  dlPercent.textContent = "0%";
-  dlOverlay.classList.remove("hidden");
-  animate(dlOverlay, { opacity: [0, 1], y: [-8, 0] }, { duration: 0.2, ease: easeInOut });
-}
-
-function hideDownloadOverlay(): void {
-  animate(dlOverlay, { opacity: [1, 0], y: [0, -8] }, { duration: 0.15, ease: easeInOut, onFinish: () => dlOverlay.classList.add("hidden") });
-}
-
-function updateDownloadProgress(downloaded: number, total: number): void {
-  const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
-  dlBar.style.width = `${pct}%`;
-  dlPercent.textContent = `${pct}%`;
-  dlStatus.textContent = `${formatBytes(downloaded)} / ${formatBytes(total)}`;
-}
 
 // === Tabs ===
 function renderTabBar(): void {
@@ -361,10 +334,18 @@ function applySettingsUI(): void {
 }
 
 function bindSettingsUI(): void {
-  document.getElementById("setting-ollama-enabled")!.addEventListener("input", (e) => {
+  document.getElementById("setting-ollama-enabled")!.addEventListener("input", async (e) => {
     settings.ollamaEnabled = (e.target as HTMLInputElement).checked;
     saveSettingsFn();
     updateOllamaStatusBar();
+    if (settings.ollamaEnabled) {
+      const running = await checkOllamaStatus();
+      if (!running) {
+        const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
+        hideModal(settingsModal, inner);
+        setTimeout(() => showOllamaSetup(), 300);
+      }
+    }
   });
   document.getElementById("setting-ollama-endpoint")!.addEventListener("input", (e) => {
     settings.ollamaEndpoint = (e.target as HTMLInputElement).value.trim() || defaultSettings.ollamaEndpoint;
@@ -514,12 +495,10 @@ async function startOllamaSetup(): Promise<void> {
     setupDownloadText.textContent = "Downloading Ollama…";
     setupProgressText.textContent = "Starting download…";
     animateSpinner(setupSpinnerArc as unknown as SVGSVGElement);
-    showDownloadOverlay("Downloading Ollama…");
 
     const path = await invoke<string>("download_ollama");
     setupProgressBar.style.width = "100%";
     setupProgressText.textContent = "Download complete";
-    hideDownloadOverlay();
 
     goToSetupStep(3);
     animateSpinner(setupSpinnerArc2 as unknown as SVGSVGElement);
@@ -536,7 +515,6 @@ async function startOllamaSetup(): Promise<void> {
     updateOllamaStatusBar();
     setStatus("AI formatting ready");
   } catch (err) {
-    hideDownloadOverlay();
     showSetupError(`${err}`);
   }
 }
@@ -579,8 +557,12 @@ async function refreshModelSuggestions(): Promise<void> {
 }
 
 async function checkFirstRunOllama(): Promise<void> {
-  const running = await checkOllamaStatus();
-  if (!running && settings.ollamaEnabled) {
+  for (let i = 0; i < 3; i++) {
+    const running = await checkOllamaStatus();
+    if (running) return;
+    if (i < 2) await new Promise((r) => setTimeout(r, 2000));
+  }
+  if (settings.ollamaEnabled) {
     showOllamaSetup();
   }
 }
@@ -1090,8 +1072,7 @@ btnMore.addEventListener("click", (e) => {
   const menuW = 200;
   const gap = 4;
   const vw = window.innerWidth;
-  const menuLeft = rect.right - menuW;
-  const clampedLeft = Math.max(8, Math.min(menuLeft, vw - menuW - 8));
+  const clampedLeft = Math.max(8, Math.min(rect.left, vw - menuW - 8));
   moreMenu.style.top = `${rect.bottom + gap}px`;
   moreMenu.style.left = `${clampedLeft}px`;
   moreMenu.classList.toggle("hidden");
@@ -1144,12 +1125,10 @@ setupFinish.addEventListener("click", hideOllamaSetup);
 import { listen } from "@tauri-apps/api/event";
 listen<{ downloaded: number; total: number }>("ollama-download-progress", (event) => {
   const { downloaded, total } = event.payload;
-  updateDownloadProgress(downloaded, total);
-  // Also update setup dialog if open
   const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
   if (!setupProgressBar.classList.contains("hidden")) {
     setupProgressBar.style.width = `${pct}%`;
-    setupDownloadText.textContent = `Downloading Ollama… (${formatBytes(downloaded)} / ${formatBytes(total)})`;
+    setupDownloadText.textContent = `Downloading Ollama installer… (${formatBytes(downloaded)} / ${formatBytes(total)})`;
     setupProgressText.textContent = `${pct}%`;
   }
 });

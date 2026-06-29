@@ -385,7 +385,6 @@ select.input {
 #ollama-dialog,
 #ollama-setup,
 #success-overlay,
-#download-overlay,
 #more-menu {
   display: flex;
 }
@@ -393,33 +392,8 @@ select.input {
 #ollama-dialog.hidden,
 #ollama-setup.hidden,
 #success-overlay.hidden,
-#download-overlay.hidden,
 #more-menu.hidden {
   display: none !important;
-}
-
-/* === Download Overlay === */
-#download-overlay {
-  z-index: 100;
-  align-items: flex-start;
-  justify-content: flex-end;
-}
-.download-card {
-  background: var(--surface-alpha);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--border-alpha);
-  box-shadow: 0 12px 32px oklch(0 0 0 / 0.15);
-}
-.dl-spinner {
-  width: 20px;
-  height: 20px;
-  border: 3px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: dl-spin 0.8s linear infinite;
-}
-@keyframes dl-spin {
-  to { transform: rotate(360deg); }
 }
 
 /* === Success Toast === */
@@ -435,10 +409,6 @@ select.input {
 }
 
 /* === More Menu === */
-#more-menu {
-  position: fixed;
-  z-index: 110;
-}
 
 /* === Tab Bar === */
 #tab-bar {
@@ -603,13 +573,13 @@ select.input {
   opacity: 1;
 }
 
-/* === More Menu === */
 #more-menu {
   background: var(--surface-alpha);
   backdrop-filter: blur(16px);
   border: 1px solid var(--border-alpha);
   box-shadow: 0 12px 32px oklch(0 0 0 / 0.15);
   z-index: 100;
+  flex-direction: column;
 }
 #more-menu.hidden {
   display: none;
