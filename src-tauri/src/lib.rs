@@ -130,7 +130,11 @@ async fn format_with_ollama(
         .as_str()
         .map(String::from)
         .ok_or_else(|| "Empty response from Ollama".to_string())?;
-    // Strip any text before first ``` or # or word character after trimming
+    Ok(clean_ollama_output(&raw))
+}
+
+/// Strip preamble sentences and code fences from Ollama output.
+fn clean_ollama_output(raw: &str) -> String {
     let trimmed = raw.trim();
     // If model wrapped response in ```markdown ... ```, extract content
     if let Some(start) = trimmed.rfind("```") {
@@ -138,11 +142,49 @@ async fn format_with_ollama(
         if let Some(end) = before.rfind("```") {
             let inner = before[end + 3..].trim();
             if !inner.is_empty() {
-                return Ok(inner.to_string());
+                return clean_ollama_output(inner);
             }
         }
     }
-    Ok(raw)
+
+    // Strip common preamble sentences
+    let lower = trimmed.to_lowercase();
+    let preambles = [
+        "here is your",
+        "here's your",
+        "here is the",
+        "here's the",
+        "certainly",
+        "sure, here",
+        "of course",
+        "i've reformatted",
+        "i have reformatted",
+        "i've formatted",
+        "i have formatted",
+        "i've rewritten",
+        "i have rewritten",
+        "below is",
+        "here is my",
+        "here's my",
+        "here you go",
+    ];
+    let has_preamble = preambles.iter().any(|p| lower.starts_with(p));
+    if has_preamble {
+        if let Some(pos) = trimmed.find("\n\n") {
+            let after = trimmed[pos + 2..].trim();
+            if !after.is_empty() {
+                return after.to_string();
+            }
+        }
+        if let Some(pos) = trimmed.find('\n') {
+            let after = trimmed[pos + 1..].trim();
+            if !after.is_empty() {
+                return after.to_string();
+            }
+        }
+    }
+
+    trimmed.to_string()
 }
 
 #[tauri::command]

@@ -602,9 +602,43 @@ select.input {
   box-shadow: 0 12px 32px oklch(0 0 0 / 0.15);
   z-index: 100;
   flex-direction: column;
+  padding: 4px;
 }
 #more-menu.hidden {
   display: none;
+}
+.more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.15s, transform 0.12s cubic-bezier(0.34,1.56,0.64,1), opacity 0.15s;
+}
+.more-menu-item:hover {
+  background: var(--hover);
+}
+.more-menu-item:active {
+  transform: scale(0.97);
+  background: var(--border);
+}
+.more-menu-item .check-indicator {
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--accent);
+}
+.more-menu-item.active .check-indicator {
+  opacity: 1;
+}
+.more-menu-item.active {
+  color: var(--accent);
 }
 
 /* === Heading anchor === */

@@ -171,20 +171,24 @@ function hideSuccessOverlay(): void {
 }
 
 async function showSuccessOverlay(msg: string): Promise<void> {
-  successMsgEl.textContent = msg;
-  successOverlay.classList.remove("hidden");
-  successCircle.setAttribute("stroke-dasharray", "176");
-  successCircle.setAttribute("stroke-dashoffset", "176");
-  successCheck.setAttribute("stroke-dasharray", "36");
-  successCheck.setAttribute("stroke-dashoffset", "36");
+  try {
+    successMsgEl.textContent = msg;
+    successOverlay.classList.remove("hidden");
+    successCircle.setAttribute("stroke-dasharray", "176");
+    successCircle.setAttribute("stroke-dashoffset", "176");
+    successCheck.setAttribute("stroke-dasharray", "36");
+    successCheck.setAttribute("stroke-dashoffset", "36");
 
-  animate(successOverlay, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
-  animate(successToast, { opacity: [0, 1], scale: [0.92, 1] }, { duration: 0.2, ease: spring() });
-  await animate(successCircle, { strokeDashoffset: [176, 0] }, { duration: 0.3, ease: easeInOut }).finished;
-  await animate(successCheck, { strokeDashoffset: [36, 0] }, { duration: 0.2, ease: easeInOut }).finished;
+    animate(successOverlay, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
+    animate(successToast, { opacity: [0, 1], scale: [0.92, 1] }, { duration: 0.2, ease: spring() });
+    await animate(successCircle, { strokeDashoffset: [176, 0] }, { duration: 0.3, ease: easeInOut }).finished;
+    await animate(successCheck, { strokeDashoffset: [36, 0] }, { duration: 0.2, ease: easeInOut }).finished;
 
-  await new Promise((r) => setTimeout(r, 1200));
-  hideSuccessOverlay();
+    await new Promise((r) => setTimeout(r, 800));
+    hideSuccessOverlay();
+  } catch {
+    successOverlay.classList.add("hidden");
+  }
 }
 
 successBackdrop.addEventListener("click", hideSuccessOverlay);
@@ -412,6 +416,7 @@ async function formatWithOllama(): Promise<void> {
   ollamaDialogSub.classList.add("hidden");
   ollamaDialogText.textContent = "Connecting to AI...";
   ollamaDialogSub.textContent = "";
+  if (ollamaSpinnerArc) ollamaSpinnerArc.style.display = "";
   animateSpinner(ollamaSpinnerArc as unknown as SVGSVGElement);
 
   const running = await checkOllamaStatus();
@@ -430,6 +435,10 @@ async function formatWithOllama(): Promise<void> {
       model: settings.ollamaModel,
       text: content,
     });
+    ollamaDialogText.textContent = "Done!";
+    ollamaDialogSub.classList.add("hidden");
+    if (ollamaSpinnerArc) ollamaSpinnerArc.style.display = "none";
+    await new Promise((r) => setTimeout(r, 800));
     hideModal(ollamaDialog, inner);
     if (tab) {
       tab.content = result;
@@ -942,6 +951,7 @@ addEventListener("toc-update", ((e: CustomEvent) => {
 function toggleTypewriter(): void {
   state.typewriterMode = !state.typewriterMode;
   document.getElementById("editor-container")!.classList.toggle("typewriter-mode", state.typewriterMode);
+  menuFocus.classList.toggle("active", state.typewriterMode);
   setStatus(state.typewriterMode ? "Focus mode on" : "Focus mode off");
 }
 
@@ -1178,6 +1188,7 @@ document.addEventListener("keydown", (e) => {
     const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
     hideModal(ollamaDialog, inner);
   }
+  if (e.key === "Escape" && !successOverlay.classList.contains("hidden")) { hideSuccessOverlay(); }
   if (e.key === "Escape" && !ollamaSetup.classList.contains("hidden")) {
     hideOllamaSetup();
   }
