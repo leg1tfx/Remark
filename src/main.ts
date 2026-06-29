@@ -436,10 +436,6 @@ async function formatWithOllama(): Promise<void> {
       model: settings.ollamaModel,
       text: content,
     });
-    ollamaDialogText.textContent = "Done!";
-    ollamaDialogSub.classList.add("hidden");
-    ollamaSpinnerEl.style.display = "none";
-    await new Promise((r) => setTimeout(r, 800));
     hideModal(ollamaDialog, inner);
     if (tab) {
       tab.content = result;
