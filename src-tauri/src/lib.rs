@@ -24,10 +24,6 @@ fn settings_path() -> PathBuf {
     p
 }
 
-fn parent_dir(path: &str) -> Option<String> {
-    PathBuf::from(path).parent().map(|p| p.to_string_lossy().to_string())
-}
-
 #[tauri::command]
 fn get_initial_file(state: tauri::State<AppState>) -> Option<String> {
     state.initial_file.lock().unwrap().take()
