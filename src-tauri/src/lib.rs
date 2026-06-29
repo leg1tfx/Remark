@@ -232,10 +232,12 @@ async fn install_ollama(path: String) -> Result<(), String> {
     let status = std::process::Command::new(&path)
         .arg("/S")
         .status()
-        .map_err(|e| format!("Install error: {}", e))?;
+        .map_err(|e| format!("Install error: {}. Try running as Administrator.", e))?;
 
-    if !status.success() {
-        return Err("Installation failed".to_string());
+    if let Some(code) = status.code() {
+        if code != 0 {
+            return Err(format!("Ollama installer exited with code {}. Try running as Administrator or install manually from https://ollama.com/download", code));
+        }
     }
     Ok(())
 }

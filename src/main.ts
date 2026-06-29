@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { animate as _animate, spring, easeInOut } from "motion";
-const animate = _animate as any;
+const animate = _animate as (...args: any[]) => any;
 import { createEditor, setEditorContent, getEditorContent, setEditorDarkMode, setEditorLanguage, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, suppressChangeEvents, insertAtCursor } from "./editor";
 import { renderPreviewContent, extractTOC, renderMarkdown } from "./preview";
 import type { AppState, ViewMode, Settings, Tab, FileEntry, LintIssue } from "./types";
@@ -449,7 +449,6 @@ async function formatWithOllama(): Promise<void> {
   ollamaDialogSub.classList.add("hidden");
   ollamaDialogText.textContent = "Connecting to AI...";
   ollamaDialogSub.textContent = "";
-  ollamaSpinnerEl.style.display = "";
   animateSpinner(ollamaSpinnerEl as unknown as SVGSVGElement);
 
   ollamaDialogText.textContent = "Formatting text...";
@@ -743,13 +742,13 @@ async function openFile(path?: string): Promise<void> {
     filePath = result as string;
   }
 
+  setStatus("Opening file...");
   try {
     const content = await invoke<string>("read_file", { path: filePath });
     const tab = addTab(filePath, content);
     tab.originalContent = content;
     tab.modified = false;
     updatePreview();
-    setEditorContent(content);
     updateTitle();
     renderTabBar();
     await showSuccessOverlay("File opened");
@@ -896,9 +895,6 @@ function renderTree(entries: FileEntry[], basePath: string, depth: number): stri
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         <span>${name}</span>
       </div>`;
-      if (isExpanded) {
-        html += `<div class="file-children" data-parent="${path}">loading…</div>`;
-      }
     } else {
       html += `<div class="file-item" data-path="${path}" style="padding-left:${6 + indent}px">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
@@ -909,30 +905,37 @@ function renderTree(entries: FileEntry[], basePath: string, depth: number): stri
   return html;
 }
 
+async function toggleDir(el: Element, path: string): Promise<void> {
+  const childContainer = sidebarFiles.querySelector(`.file-children[data-parent="${path}"]`);
+  const needsCreate = !childContainer;
+  if (needsCreate || childContainer!.classList.contains("hidden")) {
+    expandedDirs.add(path);
+    el.classList.add("dir-open");
+    if (needsCreate) {
+      const div = document.createElement("div");
+      div.className = "file-children";
+      div.dataset.parent = path;
+      el.after(div);
+      try {
+        const entries = await invoke<FileEntry[]>("list_directory", { path });
+        div.innerHTML = renderTree(entries, path, 1);
+        attachTreeListeners(div as HTMLElement);
+      } catch {
+        div.textContent = "error";
+      }
+    } else {
+      childContainer!.classList.remove("hidden");
+    }
+  } else {
+    expandedDirs.delete(path);
+    el.classList.remove("dir-open");
+    childContainer!.classList.add("hidden");
+  }
+}
+
 function attachTreeListeners(container: HTMLElement): void {
   container.querySelectorAll(".file-item[data-dir]").forEach((el) => {
-    el.addEventListener("click", async () => {
-      const path = (el as HTMLElement).dataset.path!;
-      if (expandedDirs.has(path)) {
-        expandedDirs.delete(path);
-      } else {
-        expandedDirs.add(path);
-      }
-      await refreshSidebarTree();
-      // Auto-expand the children
-      if (expandedDirs.has(path)) {
-        const childContainer = sidebarFiles.querySelector(`.file-children[data-parent="${path}"]`);
-        if (childContainer) {
-          try {
-            const entries = await invoke<FileEntry[]>("list_directory", { path });
-            childContainer.innerHTML = renderTree(entries, path, 1);
-            attachTreeListeners(childContainer as HTMLElement);
-          } catch {
-            childContainer.textContent = "error";
-          }
-        }
-      }
-    });
+    el.addEventListener("click", () => toggleDir(el, (el as HTMLElement).dataset.path!));
   });
   container.querySelectorAll(".file-item:not([data-dir])").forEach((el) => {
     el.addEventListener("click", () => {
@@ -1140,7 +1143,9 @@ function hideMoreMenu(): void {
 btnMore.addEventListener("click", (e) => {
   e.stopPropagation();
   if (moreMenuVisible) { hideMoreMenu(); return; }
-  const rect = (e.target as HTMLElement).closest("button")!.getBoundingClientRect();
+  const btn = (e.target as HTMLElement).closest("button");
+  if (!btn) return;
+  const rect = btn.getBoundingClientRect();
   const menuW = 200;
   const gap = 4;
   const vw = window.innerWidth;
@@ -1516,13 +1521,12 @@ function escHtml(s: string): string {
 }
 
 function scrollEditorToLine(line: number): void {
-  // Set view to edit mode temporarily if in view mode
   if (state.viewMode === "view") setViewMode("split");
   const el = getEditorScrollElement();
   if (!el) return;
   const cm = el.querySelector(".cm-content");
   if (!cm) return;
-  const lineEl = cm.querySelector(`[role="presentation"]:nth-child(${line})`) as HTMLElement | null;
+  const lineEl = (cm.querySelectorAll(".cm-line")[line - 1] || null) as HTMLElement | null;
   if (lineEl) {
     lineEl.scrollIntoView({ behavior: "smooth", block: "center" });
     lineEl.style.outline = "2px solid var(--accent)";
