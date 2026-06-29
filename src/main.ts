@@ -139,7 +139,12 @@ function showWithFade(el: HTMLElement, duration = 0.2): void {
 }
 
 function hideWithFade(el: HTMLElement, duration = 0.15): void {
-  animate(el, { opacity: [1, 0] }, { duration, ease: easeInOut, onFinish: () => el.classList.add("hidden") });
+  try {
+    animate(el, { opacity: [1, 0] }, { duration, ease: easeInOut });
+    setTimeout(() => el.classList.add("hidden"), (duration * 1000) + 50);
+  } catch {
+    el.classList.add("hidden");
+  }
 }
 
 function showModal(el: HTMLElement, inner: HTMLElement): void {
@@ -814,7 +819,12 @@ function showFindBar(): void {
 }
 
 function hideFindBar(): void {
-  animate(findBar, { opacity: [1, 0] }, { duration: 0.1, ease: easeInOut, onFinish: () => findBar.classList.add("hidden") });
+  try {
+    animate(findBar, { opacity: [1, 0] }, { duration: 0.1, ease: easeInOut });
+    setTimeout(() => findBar.classList.add("hidden"), 150);
+  } catch {
+    findBar.classList.add("hidden");
+  }
   findInEditor("");
 }
 
