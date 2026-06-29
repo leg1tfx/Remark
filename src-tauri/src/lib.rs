@@ -3,9 +3,17 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Emitter;
 use futures_util::StreamExt;
+use serde::Serialize;
 
 struct AppState {
     initial_file: Mutex<Option<String>>,
+}
+
+#[derive(Serialize)]
+struct FileEntry {
+    name: String,
+    path: String,
+    is_dir: bool,
 }
 
 fn settings_path() -> PathBuf {
@@ -14,6 +22,10 @@ fn settings_path() -> PathBuf {
     let _ = fs::create_dir_all(&p);
     p.push("settings.json");
     p
+}
+
+fn parent_dir(path: &str) -> Option<String> {
+    PathBuf::from(path).parent().map(|p| p.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -44,6 +56,41 @@ fn read_file(path: String) -> Result<String, String> {
 #[tauri::command]
 fn write_file(path: String, content: String) -> Result<(), String> {
     fs::write(&path, &content).map_err(|e| format!("Fehler beim Schreiben: {}", e))
+}
+
+#[tauri::command]
+fn list_directory(path: String) -> Result<Vec<FileEntry>, String> {
+    let entries = fs::read_dir(&path).map_err(|e| format!("Fehler beim Lesen des Verzeichnisses: {}", e))?;
+    let mut items: Vec<FileEntry> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            if let Some(name) = e.file_name().to_str() {
+                !name.starts_with('.')
+            } else {
+                false
+            }
+        })
+        .map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let full = e.path().to_string_lossy().to_string();
+            let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            FileEntry { name, path: full, is_dir }
+        })
+        .collect();
+    items.sort_by(|a, b| {
+        b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    Ok(items)
+}
+
+#[tauri::command]
+fn create_dir(path: String) -> Result<(), String> {
+    fs::create_dir_all(&path).map_err(|e| format!("Fehler beim Erstellen des Verzeichnisses: {}", e))
+}
+
+#[tauri::command]
+fn save_image(path: String, data: Vec<u8>) -> Result<(), String> {
+    fs::write(&path, &data).map_err(|e| format!("Fehler beim Speichern des Bildes: {}", e))
 }
 
 #[tauri::command]
@@ -185,13 +232,15 @@ pub fn run(initial_file: Option<String>) {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             initial_file: Mutex::new(initial_file),
         })
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
+            list_directory,
+            create_dir,
+            save_image,
             get_initial_file,
             read_settings,
             save_settings,

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,94 +10,127 @@
     <div id="app" class="h-screen w-screen overflow-hidden flex flex-col">
       <!-- Toolbar -->
       <header id="toolbar" class="flex items-center gap-1 px-3 py-1.5 border-b draggable">
-        <div class="flex items-center gap-1.5 min-w-0" id="file-info">
-          <span id="filename" class="text-sm font-medium truncate">Keine Datei geöffnet</span>
+        <button id="btn-sidebar" class="toolbar-btn" title="Sidebar toggle">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+        </button>
+
+        <div class="w-px h-4 bg-border mx-1"></div>
+
+        <div class="flex items-center gap-1 min-w-0" id="file-info">
+          <span id="filename" class="text-sm font-medium truncate">No file open</span>
           <span id="modified-dot" class="hidden w-2 h-2 rounded-full bg-amber-500 flex-shrink-0"></span>
         </div>
 
         <div class="flex-1 min-w-0"></div>
 
         <div class="flex items-center gap-0.5">
-          <button id="btn-open" class="toolbar-btn" title="Datei öffnen (Strg+O)">
+          <button id="btn-open" class="toolbar-btn" title="Open file (Ctrl+O)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
           </button>
-          <button id="btn-save" class="toolbar-btn" title="Speichern (Strg+S)">
+          <button id="btn-save" class="toolbar-btn" title="Save (Ctrl+S)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/></svg>
-          </button>
-          <button id="btn-undo" class="toolbar-btn hidden" title="Rückgängig (Strg+Z)">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
           </button>
 
           <div class="w-px h-4 bg-border mx-1"></div>
 
-          <button id="btn-view" class="toolbar-btn active" title="Vorschau (Strg+Shift+V)">
+          <button id="btn-view" class="toolbar-btn active" title="Preview (Ctrl+Shift+V)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </button>
-          <button id="btn-edit" class="toolbar-btn" title="Editor (Strg+E)">
+          <button id="btn-edit" class="toolbar-btn" title="Editor (Ctrl+E)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
-          <button id="btn-split" class="toolbar-btn" title="Beide (Strg+Shift+E)">
+          <button id="btn-split" class="toolbar-btn" title="Both (Ctrl+Shift+E)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="14" rx="1"/><rect x="14" y="3" width="7" height="14" rx="1"/><line x1="1" y1="21" x2="23" y2="21"/></svg>
           </button>
 
           <div class="w-px h-4 bg-border mx-1"></div>
 
-          <button id="btn-find" class="toolbar-btn" title="Suchen (Strg+F)">
+          <button id="btn-find" class="toolbar-btn" title="Search (Ctrl+F)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </button>
-          <button id="btn-ollama" class="toolbar-btn" title="Mit KI formatieren">
+          <button id="btn-focus" class="toolbar-btn" title="Focus / Typewriter mode">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </button>
+          <button id="btn-ollama" class="toolbar-btn" title="Format with AI">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 0-8 8c0 3.5 2 6.5 5 8l-1 4h8l-1-4c3-1.5 5-4.5 5-8a8 8 0 0 0-8-8z"/><circle cx="12" cy="10" r="3"/></svg>
           </button>
-          <button id="btn-settings" class="toolbar-btn" title="Einstellungen">
+          <button id="btn-export" class="toolbar-btn" title="Export">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>
+          <button id="btn-settings" class="toolbar-btn" title="Settings">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
 
           <div class="w-px h-4 bg-border mx-1"></div>
 
-          <button id="btn-theme" class="toolbar-btn" title="Theme umschalten">
+          <button id="btn-theme" class="toolbar-btn" title="Toggle theme">
             <svg id="theme-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           </button>
         </div>
       </header>
 
+      <!-- Tab Bar -->
+      <div id="tab-bar" class="hidden flex items-center gap-0 px-2 border-b bg-surface" style="min-height:32px">
+        <div id="tab-list" class="flex-1 flex overflow-x-auto items-stretch gap-0"></div>
+        <button id="btn-new-tab" class="toolbar-btn !px-2 !py-1 shrink-0" title="New tab">+</button>
+      </div>
+
       <!-- Find Bar -->
       <div id="find-bar" class="hidden flex items-center gap-2 px-3 py-1.5 border-b bg-surface text-sm">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-muted"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="find-input" type="text" placeholder="Suchen…" class="flex-1 bg-transparent border-none outline-none text-sm px-1" autofocus>
+        <input id="find-input" type="text" placeholder="Search…" class="flex-1 bg-transparent border-none outline-none text-sm px-1" autofocus>
         <span id="find-count" class="text-xs text-muted min-w-[4ch] text-right"></span>
-        <button id="find-prev" class="toolbar-btn !px-2" title="Vorheriges">▲</button>
-        <button id="find-next" class="toolbar-btn !px-2" title="Nächstes">▼</button>
-        <button id="find-close" class="toolbar-btn !px-2 text-muted hover:text-text" title="Schließen (Esc)">✕</button>
+        <button id="find-prev" class="toolbar-btn !px-2" title="Previous">▲</button>
+        <button id="find-next" class="toolbar-btn !px-2" title="Next">▼</button>
+        <button id="find-close" class="toolbar-btn !px-2 text-muted hover:text-text" title="Close (Esc)">✕</button>
       </div>
 
-      <!-- Main -->
-      <main id="main" class="flex-1 flex overflow-hidden">
-        <div id="editor-panel" class="hidden flex-1 overflow-hidden">
-          <div id="editor-container" class="h-full w-full"></div>
-        </div>
-        <div id="resize-handle" class="hidden w-1 bg-border cursor-col-resize hover:bg-accent transition-colors"></div>
-        <div id="preview-panel" class="flex-1 overflow-y-auto">
-          <div id="preview-container" class="markdown-body max-w-3xl mx-auto px-8 py-6"></div>
-          <div id="empty-state" class="flex flex-col items-center justify-center h-full text-muted">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-4 opacity-40">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14,2 14,8 20,8"/>
-              <line x1="12" y1="18" x2="12" y2="12"/>
-              <line x1="9" y1="15" x2="15" y2="15"/>
-            </svg>
-            <p class="text-base">Öffne eine .md-Datei um zu starten</p>
-            <p class="text-xs mt-1 opacity-60">Drag & Drop oder Strg+O</p>
+      <!-- Main Area -->
+      <div class="flex flex-1 overflow-hidden">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="hidden w-56 border-r bg-surface overflow-hidden flex-shrink-0 flex flex-col">
+          <div id="sidebar-header" class="flex items-center border-b px-2 shrink-0">
+            <button id="sidebar-panel-files" class="sidebar-tab-btn active" data-panel="files">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            </button>
+            <button id="sidebar-panel-toc" class="sidebar-tab-btn" data-panel="toc">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </button>
           </div>
-        </div>
-      </main>
+          <div id="sidebar-files" class="flex-1 overflow-y-auto text-xs p-2"></div>
+          <div id="sidebar-toc" class="hidden flex-1 overflow-y-auto text-xs p-2"></div>
+        </aside>
+
+        <!-- Editor + Preview -->
+        <main id="main" class="flex-1 flex overflow-hidden">
+          <div id="editor-panel" class="hidden flex-1 overflow-hidden">
+            <div id="editor-container" class="h-full w-full"></div>
+          </div>
+          <div id="resize-handle" class="hidden w-1 bg-border cursor-col-resize hover:bg-accent transition-colors"></div>
+          <div id="preview-panel" class="flex-1 overflow-y-auto">
+            <div id="preview-container" class="markdown-body max-w-3xl mx-auto px-8 py-6"></div>
+            <div id="empty-state" class="flex flex-col items-center justify-center h-full text-muted">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mb-4 opacity-40">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14,2 14,8 20,8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+              <p class="text-base">Open a .md file to get started</p>
+              <p class="text-xs mt-1 opacity-60">Drag & drop or Ctrl+O</p>
+            </div>
+          </div>
+        </main>
+      </div>
 
       <!-- Status Bar -->
       <footer id="status-bar" class="flex items-center gap-3 px-3 py-1 border-t text-xs text-muted">
-        <span id="status-text">Bereit</span>
+        <span id="status-text">Ready</span>
+        <span id="word-count" class="hidden text-xs text-muted"></span>
         <span class="flex-1"></span>
         <span id="status-ollama" class="flex items-center gap-1 hidden">
           <span class="w-1.5 h-1.5 rounded-full bg-muted"></span>
-          KI
+          AI
         </span>
         <span id="status-filename-bottom" class="truncate max-w-[200px]"></span>
       </footer>
@@ -111,7 +144,7 @@
             <line x1="12" y1="18" x2="12" y2="12"/>
             <line x1="9" y1="15" x2="15" y2="15"/>
           </svg>
-          <p class="text-lg font-medium">Datei ablegen zum Öffnen</p>
+          <p class="text-lg font-medium">Drop file to open</p>
         </div>
       </div>
 
@@ -120,27 +153,27 @@
         <div id="settings-backdrop" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
         <div class="settings-panel relative w-full max-w-md mx-4 rounded-xl shadow-xl border overflow-hidden">
           <div class="flex items-center justify-between px-5 py-3 border-b">
-            <h2 class="text-base font-semibold">Einstellungen</h2>
-            <button id="settings-close" class="toolbar-btn !p-1" title="Schließen">✕</button>
+            <h2 class="text-base font-semibold">Settings</h2>
+            <button id="settings-close" class="toolbar-btn !p-1" title="Close">✕</button>
           </div>
           <div class="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
             <div>
               <label class="flex items-center justify-between">
-                <span class="text-sm font-medium">KI-Formatierung aktivieren</span>
+                <span class="text-sm font-medium">Enable AI Formatting</span>
                 <input id="setting-ollama-enabled" type="checkbox" class="toggle">
               </label>
             </div>
             <div>
-              <label class="text-xs font-medium text-muted block mb-1">Ollama-Endpunkt</label>
+              <label class="text-xs font-medium text-muted block mb-1">Ollama Endpoint</label>
               <input id="setting-ollama-endpoint" type="text" class="w-full input" placeholder="http://localhost:11434">
             </div>
             <div>
-              <label class="text-xs font-medium text-muted block mb-1">Modell</label>
+              <label class="text-xs font-medium text-muted block mb-1">Model</label>
               <input id="setting-ollama-model" type="text" class="w-full input" placeholder="llama3.2:3b" list="model-suggestions">
               <datalist id="model-suggestions"></datalist>
             </div>
             <div>
-              <button id="setting-install-ollama" class="btn-secondary text-xs px-3 py-1.5">KI installieren / aktualisieren</button>
+              <button id="setting-install-ollama" class="btn-secondary text-xs px-3 py-1.5">Install / Update AI</button>
             </div>
             <div id="ollama-status" class="text-xs flex items-center gap-2 hidden">
               <span class="w-2 h-2 rounded-full"></span>
@@ -148,12 +181,12 @@
             </div>
             <hr class="border-t border-border">
             <div>
-              <label class="text-xs font-medium text-muted block mb-1">Auto-Save Intervall (ms)</label>
+              <label class="text-xs font-medium text-muted block mb-1">Auto-save interval (ms)</label>
               <input id="setting-autosave" type="number" class="w-full input" placeholder="2000" min="500" step="500">
             </div>
             <div>
               <label class="text-xs font-medium text-muted block mb-1">Recent Files</label>
-              <button id="clear-recent" class="text-xs text-accent hover:underline">Liste leeren</button>
+              <button id="clear-recent" class="text-xs text-accent hover:underline">Clear list</button>
             </div>
           </div>
         </div>
@@ -169,23 +202,21 @@
               <circle id="ollama-spinner-arc" cx="16" cy="16" r="13" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" stroke="var(--accent)" stroke-width="3" fill="none"/>
             </svg>
           </div>
-          <p id="ollama-dialog-text" class="text-sm font-medium">Verbinde mit KI...</p>
+          <p id="ollama-dialog-text" class="text-sm font-medium">Connecting to AI...</p>
           <p id="ollama-dialog-sub" class="text-xs text-muted mt-1 hidden"></p>
-          <button id="ollama-cancel" class="text-xs text-accent hover:underline mt-4 hidden">Abbrechen</button>
+          <button id="ollama-cancel" class="text-xs text-accent hover:underline mt-4 hidden">Cancel</button>
         </div>
       </div>
 
-      <!-- Ollama Setup Dialog (first-run / from settings) -->
+      <!-- Ollama Setup Dialog -->
       <div id="ollama-setup" class="fixed inset-0 z-45 hidden items-center justify-center">
         <div id="ollama-setup-backdrop" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
         <div class="settings-panel relative w-full max-w-md mx-4 rounded-xl shadow-xl border overflow-hidden">
           <div class="flex items-center justify-between px-5 py-3 border-b">
-            <h2 class="text-base font-semibold">KI einrichten</h2>
-            <button id="ollama-setup-close" class="toolbar-btn !p-1" title="Schließen">✕</button>
+            <h2 class="text-base font-semibold">Set up AI</h2>
+            <button id="ollama-setup-close" class="toolbar-btn !p-1" title="Close">✕</button>
           </div>
           <div class="p-5 space-y-4">
-
-            <!-- Step indicator -->
             <div class="flex items-center gap-1 text-xs text-muted">
               <span id="setup-step-1" class="step-dot active">1</span>
               <span class="h-px flex-1 bg-border"></span>
@@ -195,27 +226,23 @@
               <span class="h-px flex-1 bg-border"></span>
               <span id="setup-step-4" class="step-dot">4</span>
             </div>
-
-            <!-- Step 1: Welcome + Model -->
             <div id="setup-page-1">
-              <p class="text-sm">Ollama wurde nicht gefunden. Möchtest du die KI-Formatierung einrichten?</p>
-              <p class="text-xs text-muted mt-1">Ollama wird heruntergeladen und installiert. Danach wird ein kleines KI-Modell für die Markdown-Formatierung geladen.</p>
+              <p class="text-sm">Ollama was not found. Would you like to set up AI formatting?</p>
+              <p class="text-xs text-muted mt-1">Ollama will be downloaded and installed. A small AI model for Markdown formatting will be pulled afterwards.</p>
               <div class="mt-4">
-                <label class="text-xs font-medium text-muted block mb-1">Modell auswählen</label>
+                <label class="text-xs font-medium text-muted block mb-1">Select model</label>
                 <select id="setup-model-select" class="w-full input">
-                  <option value="llama3.2:3b">llama3.2:3b (2.0 GB) – empfohlen</option>
-                  <option value="qwen2.5:3b">qwen2.5:3b (1.9 GB) – gut & multilingual</option>
-                  <option value="llama3.2:1b">llama3.2:1b (1.3 GB) – kleiner, schneller</option>
-                  <option value="qwen2.5:1.5b">qwen2.5:1.5b (986 MB) – kleinste Option</option>
+                  <option value="llama3.2:3b">llama3.2:3b (2.0 GB) – recommended</option>
+                  <option value="qwen2.5:3b">qwen2.5:3b (1.9 GB) – good & multilingual</option>
+                  <option value="llama3.2:1b">llama3.2:1b (1.3 GB) – smaller, faster</option>
+                  <option value="qwen2.5:1.5b">qwen2.5:1.5b (986 MB) – smallest</option>
                 </select>
               </div>
               <div class="flex justify-end gap-2 mt-4">
-                <button id="setup-skip" class="btn-secondary text-sm px-4 py-1.5">Später</button>
-                <button id="setup-start" class="btn-primary text-sm px-4 py-1.5">Installieren</button>
+                <button id="setup-skip" class="btn-secondary text-sm px-4 py-1.5">Later</button>
+                <button id="setup-start" class="btn-primary text-sm px-4 py-1.5">Install</button>
               </div>
             </div>
-
-            <!-- Step 2: Downloading -->
             <div id="setup-page-2" class="hidden text-center py-4">
               <div class="flex items-center justify-center mb-3">
                 <svg class="w-8 h-8" viewBox="0 0 32 32" fill="none" stroke="var(--accent)" stroke-width="3">
@@ -223,14 +250,12 @@
                   <circle id="setup-spinner-arc" cx="16" cy="16" r="13" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" stroke="var(--accent)" stroke-width="3" fill="none"/>
                 </svg>
               </div>
-              <p id="setup-download-text" class="text-sm font-medium">Lade Ollama herunter…</p>
+              <p id="setup-download-text" class="text-sm font-medium">Downloading Ollama…</p>
               <div class="mt-3 w-full bg-border rounded-full h-1.5 overflow-hidden">
                 <div id="setup-progress-bar" class="h-full bg-accent rounded-full transition-all duration-300" style="width:0%"></div>
               </div>
-              <p id="setup-progress-text" class="text-xs text-muted mt-1">Starte Download…</p>
+              <p id="setup-progress-text" class="text-xs text-muted mt-1">Starting download…</p>
             </div>
-
-            <!-- Step 3: Installing -->
             <div id="setup-page-3" class="hidden text-center py-4">
               <div class="flex items-center justify-center mb-3">
                 <svg class="w-8 h-8" viewBox="0 0 32 32" fill="none" stroke="var(--accent)" stroke-width="3">
@@ -238,11 +263,9 @@
                   <circle id="setup-spinner-arc2" cx="16" cy="16" r="13" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" stroke="var(--accent)" stroke-width="3" fill="none"/>
                 </svg>
               </div>
-              <p class="text-sm font-medium">Installiere Ollama…</p>
-              <p class="text-xs text-muted mt-1">Dies kann einen Moment dauern.</p>
+              <p class="text-sm font-medium">Installing Ollama…</p>
+              <p class="text-xs text-muted mt-1">This may take a moment.</p>
             </div>
-
-            <!-- Step 4: Pulling model -->
             <div id="setup-page-4" class="hidden text-center py-4">
               <div class="flex items-center justify-center mb-3">
                 <svg class="w-8 h-8" viewBox="0 0 32 32" fill="none" stroke="var(--accent)" stroke-width="3">
@@ -250,11 +273,9 @@
                   <circle id="setup-spinner-arc3" cx="16" cy="16" r="13" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" stroke="var(--accent)" stroke-width="3" fill="none"/>
                 </svg>
               </div>
-              <p id="setup-pull-text" class="text-sm font-medium">Lade KI-Modell…</p>
-              <p class="text-xs text-muted mt-1">Dies kann einige Minuten dauern.</p>
+              <p id="setup-pull-text" class="text-sm font-medium">Loading AI model…</p>
+              <p class="text-xs text-muted mt-1">This may take a few minutes.</p>
             </div>
-
-            <!-- Done -->
             <div id="setup-page-done" class="hidden text-center py-4">
               <div class="flex items-center justify-center mb-3">
                 <svg class="w-12 h-12" viewBox="0 0 48 48" fill="none" stroke="var(--accent)" stroke-width="3">
@@ -262,22 +283,25 @@
                   <polyline points="16,24 22,30 34,18" fill="none" stroke="var(--accent)" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
               </div>
-              <p class="text-sm font-medium">KI ist bereit!</p>
-              <p class="text-xs text-muted mt-1">Du kannst jetzt die KI-Formatierung nutzen.</p>
-              <button id="setup-finish" class="btn-primary text-sm px-4 py-1.5 mt-4">Fertig</button>
+              <p class="text-sm font-medium">AI is ready!</p>
+              <p class="text-xs text-muted mt-1">You can now use AI formatting.</p>
+              <button id="setup-finish" class="btn-primary text-sm px-4 py-1.5 mt-4">Done</button>
             </div>
-
-            <!-- Error -->
             <div id="setup-page-error" class="hidden text-center py-4">
-              <p id="setup-error-text" class="text-sm font-medium text-red-500">Fehler aufgetreten</p>
-              <p class="text-xs text-muted mt-1">Bitte versuche es später erneut oder installiere Ollama manuell.</p>
+              <p id="setup-error-text" class="text-sm font-medium text-red-500">Error</p>
+              <p class="text-xs text-muted mt-1">Please try again later or install Ollama manually.</p>
               <div class="flex justify-center gap-2 mt-4">
-                <button id="setup-error-close" class="btn-secondary text-sm px-4 py-1.5">Schließen</button>
+                <button id="setup-error-close" class="btn-secondary text-sm px-4 py-1.5">Close</button>
               </div>
             </div>
-
           </div>
         </div>
+      </div>
+
+      <!-- Export dropdown -->
+      <div id="export-menu" class="fixed z-50 hidden settings-panel border rounded-lg shadow-xl py-1 text-sm">
+        <button id="export-html" class="w-full text-left px-4 py-1.5 hover:bg-hover">Export as HTML</button>
+        <button id="export-pdf" class="w-full text-left px-4 py-1.5 hover:bg-hover">Export as PDF</button>
       </div>
 
       <!-- Success Overlay -->

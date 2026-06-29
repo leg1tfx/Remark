@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./theme.css";
+@import "katex/dist/katex.min.css";
 
 html, body {
   margin: 0;
@@ -121,14 +122,16 @@ html, body {
 #settings-modal,
 #ollama-dialog,
 #ollama-setup,
-#success-overlay {
+#success-overlay,
+#export-menu {
   display: flex;
 }
 
 #settings-modal.hidden,
 #ollama-dialog.hidden,
 #ollama-setup.hidden,
-#success-overlay.hidden {
+#success-overlay.hidden,
+#export-menu.hidden {
   display: none;
 }
 
@@ -353,4 +356,184 @@ select.input {
 #success-overlay {
   background: oklch(0 0 0 / 0.25);
   backdrop-filter: blur(2px);
+}
+
+/* === Tab Bar === */
+#tab-bar {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+  max-width: 180px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.tab-item:hover {
+  background: var(--hover);
+}
+
+.tab-item.active {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tab-item .tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-item .tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.tab-item .tab-close:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.tab-item .tab-modified {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* === Sidebar === */
+#sidebar {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.sidebar-tab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  flex: 1;
+}
+
+.sidebar-tab-btn:hover {
+  color: var(--text);
+}
+
+.sidebar-tab-btn.active {
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
+}
+
+#sidebar-files .file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+#sidebar-files .file-item:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+#sidebar-files .file-item svg {
+  flex-shrink: 0;
+}
+
+#sidebar-files .file-children {
+  padding-left: 16px;
+}
+
+#sidebar-files .file-item.dir-open > svg:first-child {
+  transform: rotate(90deg);
+}
+
+/* === TOC in Sidebar === */
+.toc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.toc-list ul {
+  list-style: none;
+  padding-left: 12px;
+}
+
+.toc-link {
+  display: block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toc-link:hover {
+  background: var(--hover);
+  color: var(--accent);
+}
+
+.toc-link[data-level="1"] { font-weight: 600; }
+.toc-link[data-level="2"] { font-weight: 500; }
+
+/* === Typewriter / Focus Mode === */
+.typewriter-mode .cm-scroller {
+  padding-top: 25vh !important;
+  padding-bottom: 25vh !important;
+}
+
+.typewriter-mode .cm-line {
+  opacity: 0.3;
+  transition: opacity 0.25s ease;
+}
+
+.typewriter-mode .cm-activeLine {
+  opacity: 1;
+}
+
+/* === Export Menu === */
+#export-menu {
+  background: var(--surface);
+  border-color: var(--border);
+  z-index: 100;
+}
+
+/* === Heading anchor === */
+.heading-anchor {
+  opacity: 0;
+  margin-left: 6px;
+  font-size: 0.8em;
+  color: var(--accent);
+  text-decoration: none;
+  transition: opacity 0.15s;
 }

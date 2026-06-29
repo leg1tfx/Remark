@@ -7,6 +7,11 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { searchKeymap, findNext, findPrevious, closeSearchPanel, openSearchPanel } from "@codemirror/search";
 
 let view: EditorView | null = null;
+let suppressChange = false;
+
+export function suppressChangeEvents(val: boolean): void {
+  suppressChange = val;
+}
 
 export function createEditor(container: HTMLElement, darkMode: boolean): EditorView {
   const state = EditorState.create({
@@ -17,8 +22,9 @@ export function createEditor(container: HTMLElement, darkMode: boolean): EditorV
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
       placeholder("Starte mit dem Schreiben..."),
       EditorView.lineWrapping,
+      EditorView.contentAttributes.of({ spellcheck: "true" }),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
+        if (update.docChanged && !suppressChange) {
           dispatchEvent(new CustomEvent("editor-change", {
             detail: { content: update.state.doc.toString() },
           }));
@@ -96,7 +102,6 @@ export function getEditorContent(): string {
 
 export function setEditorDarkMode(dark: boolean): void {
   if (!view) return;
-  // recreate with new theme
   const pos = view.state.selection.main.head;
   const content = view.state.doc.toString();
   const parent = view.dom.parentElement;
@@ -111,6 +116,29 @@ export function setEditorDarkMode(dark: boolean): void {
 
 export function getEditorScrollElement(): HTMLElement | null {
   return view?.scrollDOM ?? null;
+}
+
+export function getEditorScrollTop(): number {
+  if (!view) return 0;
+  return view.scrollDOM.scrollTop;
+}
+
+export function setEditorScrollTop(n: number): void {
+  if (!view) return;
+  view.scrollDOM.scrollTop = n;
+}
+
+export function getEditorView(): EditorView | null {
+  return view;
+}
+
+export function insertAtCursor(text: string): void {
+  if (!view) return;
+  const from = view.state.selection.main.head;
+  view.dispatch({
+    changes: { from, insert: text },
+    selection: { anchor: from + text.length },
+  });
 }
 
 export function destroyEditor(): void {

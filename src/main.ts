@@ -3,20 +3,34 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { animate as _animate, spring, easeInOut } from "motion";
 const animate = _animate as any;
-import { createEditor, setEditorContent, getEditorContent, setEditorDarkMode, getEditorScrollElement } from "./editor";
-import { renderPreviewContent } from "./preview";
-import type { AppState, ViewMode, Settings } from "./types";
+import { createEditor, setEditorContent, getEditorContent, setEditorDarkMode, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, suppressChangeEvents, insertAtCursor } from "./editor";
+import { renderPreviewContent, extractTOC, renderMarkdown } from "./preview";
+import type { AppState, ViewMode, Settings, Tab, FileEntry } from "./types";
 import "./styles/main.css";
 import "highlight.js/styles/github.css";
 
+// === State ===
 const state: AppState = {
-  currentFile: null,
-  content: "",
-  originalContent: "",
-  modified: false,
+  tabs: [],
+  activeTabId: null,
   viewMode: "view",
   darkMode: false,
+  sidebarOpen: false,
+  sidebarPanel: "files",
+  typewriterMode: false,
 };
+
+let tabCounter = 0;
+function nextTabId(): string { return `tab-${++tabCounter}`; }
+
+function getActiveTab(): Tab | null {
+  if (!state.activeTabId) return null;
+  return state.tabs.find((t) => t.id === state.activeTabId) ?? null;
+}
+
+function setActiveTab(t: Tab | null): void {
+  state.activeTabId = t?.id ?? null;
+}
 
 const defaultSettings: Settings = {
   ollamaEnabled: false,
@@ -30,6 +44,7 @@ let settings: Settings = { ...defaultSettings };
 let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 let ollamaCheckTimer: ReturnType<typeof setInterval> | null = null;
 
+// === DOM refs ===
 const editorPanel = document.getElementById("editor-panel")!;
 const previewPanel = document.getElementById("preview-panel")!;
 const previewContainer = document.getElementById("preview-container")!;
@@ -40,6 +55,7 @@ const modifiedDot = document.getElementById("modified-dot")!;
 const statusText = document.getElementById("status-text")!;
 const statusOllama = document.getElementById("status-ollama")!;
 const statusFilenameBottom = document.getElementById("status-filename-bottom")!;
+const wordCountEl = document.getElementById("word-count")!;
 
 const dropOverlay = document.getElementById("drop-overlay")!;
 const dropContent = dropOverlay.querySelector(".drop-content") as HTMLElement;
@@ -63,7 +79,6 @@ const ollamaCancel = document.getElementById("ollama-cancel")!;
 
 const successOverlay = document.getElementById("success-overlay")!;
 
-// Ollama Setup Dialog
 const ollamaSetup = document.getElementById("ollama-setup")!;
 const ollamaSetupBackdrop = document.getElementById("ollama-setup-backdrop")!;
 const ollamaSetupClose = document.getElementById("ollama-setup-close")!;
@@ -83,6 +98,7 @@ const setupSpinnerArc3 = document.getElementById("setup-spinner-arc3")!;
 const successCircle = document.getElementById("success-circle")!;
 const successCheck = document.getElementById("success-check")!;
 const successText = document.getElementById("success-text")!;
+const successMsgEl = document.getElementById("success-text")!;
 
 const btnView = document.getElementById("btn-view")!;
 const btnEdit = document.getElementById("btn-edit")!;
@@ -93,6 +109,22 @@ const btnTheme = document.getElementById("btn-theme")!;
 const btnFind = document.getElementById("btn-find")!;
 const btnOllama = document.getElementById("btn-ollama")!;
 const btnSettings = document.getElementById("btn-settings")!;
+const btnSidebar = document.getElementById("btn-sidebar")!;
+const btnFocus = document.getElementById("btn-focus")!;
+const btnNewTab = document.getElementById("btn-new-tab")!;
+const btnExport = document.getElementById("btn-export")!;
+const tabList = document.getElementById("tab-list")!;
+const tabBar = document.getElementById("tab-bar")!;
+const sidebar = document.getElementById("sidebar")!;
+const sidebarFiles = document.getElementById("sidebar-files")!;
+const sidebarToc = document.getElementById("sidebar-toc")!;
+const sidebarPanelFiles = document.getElementById("sidebar-panel-files")!;
+const sidebarPanelToc = document.getElementById("sidebar-panel-toc")!;
+const exportMenu = document.getElementById("export-menu")!;
+const exportHtmlBtn = document.getElementById("export-html")!;
+const exportPdfBtn = document.getElementById("export-pdf")!;
+
+const themeIcon = document.getElementById("theme-icon")!;
 
 // === Animations ===
 function showWithFade(el: HTMLElement, duration = 0.2): void {
@@ -124,10 +156,8 @@ function animateSpinner(el: SVGElement, loop = true): void {
 }
 
 async function showSuccessOverlay(msg: string): Promise<void> {
-  successText.textContent = msg;
+  successMsgEl.textContent = msg;
   successOverlay.classList.remove("hidden");
-
-  // Reset
   successCircle.setAttribute("stroke-dasharray", "176");
   successCircle.setAttribute("stroke-dashoffset", "176");
   successCheck.setAttribute("stroke-dasharray", "36");
@@ -139,6 +169,117 @@ async function showSuccessOverlay(msg: string): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 800));
   animate(successOverlay, { opacity: [1, 0], scale: [1, 0.95] }, { duration: 0.2, ease: easeInOut, onFinish: () => successOverlay.classList.add("hidden") });
+}
+
+// === Tabs ===
+function renderTabBar(): void {
+  tabList.innerHTML = "";
+  state.tabs.forEach((tab) => {
+    const name = tab.file
+      ? tab.file.split("\\").pop()?.split("/").pop() || "untitled"
+      : "untitled";
+    const div = document.createElement("div");
+    div.className = `tab-item${tab.id === state.activeTabId ? " active" : ""}`;
+    div.dataset.tabId = tab.id;
+    div.innerHTML = `
+      ${tab.modified ? '<span class="tab-modified"></span>' : ""}
+      <span class="tab-name">${name}</span>
+      <span class="tab-close" data-tab-close="${tab.id}">✕</span>
+    `;
+    div.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".tab-close")) return;
+      switchTab(tab.id);
+    });
+    div.querySelector(".tab-close")!.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeTab(tab.id);
+    });
+    tabList.appendChild(div);
+  });
+  tabBar.classList.toggle("hidden", state.tabs.length === 0);
+}
+
+function addTab(file: string | null, content: string = ""): Tab {
+  const tab: Tab = {
+    id: nextTabId(),
+    file,
+    content,
+    originalContent: content,
+    modified: false,
+    scrollTop: 0,
+  };
+  state.tabs.push(tab);
+  switchTab(tab.id);
+  return tab;
+}
+
+function closeTab(id: string): void {
+  const tab = state.tabs.find((t) => t.id === id);
+  if (!tab) return;
+  if (tab.modified) {
+    const msg = tab.file
+      ? `"${tab.file.split("\\").pop()?.split("/").pop()}" has unsaved changes. Close anyway?`
+      : "Unsaved changes. Close anyway?";
+    if (!confirm(msg)) return;
+  }
+  const idx = state.tabs.indexOf(tab);
+  state.tabs.splice(idx, 1);
+  if (state.activeTabId === id) {
+    const next = state.tabs[Math.min(idx, state.tabs.length - 1)] ?? null;
+    setActiveTab(next);
+    if (next) {
+      loadTab(next);
+    } else {
+      setActiveTab(null);
+      // Reset UI
+      filenameEl.textContent = "No file open";
+      modifiedDot.classList.add("hidden");
+      statusFilenameBottom.textContent = "";
+      document.title = "Remark";
+      statusText.textContent = "Ready";
+      wordCountEl.classList.add("hidden");
+      emptyState.classList.remove("hidden");
+      previewContainer.classList.add("hidden");
+      editorPanel.classList.add("hidden");
+      previewPanel.classList.remove("hidden");
+      setEditorContent("");
+    }
+  }
+  renderTabBar();
+}
+
+function switchTab(id: string): void {
+  const old = getActiveTab();
+  if (old) {
+    old.scrollTop = getEditorScrollTop();
+    old.content = getEditorContent();
+  }
+  const tab = state.tabs.find((t) => t.id === id);
+  if (!tab) return;
+  setActiveTab(tab);
+  loadTab(tab);
+  renderTabBar();
+}
+
+function loadTab(tab: Tab): void {
+  suppressChangeEvents(true);
+  setEditorContent(tab.content);
+  suppressChangeEvents(false);
+
+  setTimeout(() => setEditorScrollTop(tab.scrollTop), 0);
+
+  const name = tab.file
+    ? tab.file.split("\\").pop()?.split("/").pop()
+    : "untitled";
+  filenameEl.textContent = name ?? "untitled";
+  modifiedDot.classList.toggle("hidden", !tab.modified);
+  statusFilenameBottom.textContent = tab.file ?? "";
+  document.title = tab.modified ? `* ${name} - Remark` : `${name} - Remark`;
+
+  emptyState.classList.add("hidden");
+  previewContainer.classList.remove("hidden");
+  updatePreview();
+  updateWordCount();
 }
 
 // === Settings ===
@@ -153,7 +294,7 @@ async function loadSettings(): Promise<void> {
   applySettingsUI();
 }
 
-async function saveSettings(): Promise<void> {
+async function saveSettingsFn(): Promise<void> {
   try {
     await invoke("save_settings", { content: JSON.stringify(settings) });
   } catch {}
@@ -171,26 +312,26 @@ function applySettingsUI(): void {
 function bindSettingsUI(): void {
   document.getElementById("setting-ollama-enabled")!.addEventListener("change", (e) => {
     settings.ollamaEnabled = (e.target as HTMLInputElement).checked;
-    saveSettings();
+    saveSettingsFn();
     updateOllamaStatusBar();
   });
   document.getElementById("setting-ollama-endpoint")!.addEventListener("change", (e) => {
     settings.ollamaEndpoint = (e.target as HTMLInputElement).value.trim() || defaultSettings.ollamaEndpoint;
-    saveSettings();
+    saveSettingsFn();
   });
   document.getElementById("setting-ollama-model")!.addEventListener("change", (e) => {
     settings.ollamaModel = (e.target as HTMLInputElement).value.trim() || defaultSettings.ollamaModel;
-    saveSettings();
+    saveSettingsFn();
   });
   document.getElementById("setting-autosave")!.addEventListener("change", (e) => {
     settings.autoSaveInterval = Math.max(500, parseInt((e.target as HTMLInputElement).value) || 2000);
-    saveSettings();
+    saveSettingsFn();
     restartAutoSave();
   });
   document.getElementById("clear-recent")!.addEventListener("click", () => {
     settings.recentFiles = [];
-    saveSettings();
-    setStatus("Recent Files gelöscht");
+    saveSettingsFn();
+    setStatus("Recent files cleared");
   });
 }
 
@@ -209,42 +350,42 @@ async function updateOllamaStatusBar(): Promise<void> {
   statusOllama.classList.toggle("hidden", !settings.ollamaEnabled);
   if (settings.ollamaEnabled) {
     dot.style.background = running ? "var(--accent)" : "var(--text-tertiary)";
-    dot.title = running ? "KI verbunden" : "KI nicht verfügbar";
+    dot.title = running ? "AI connected" : "AI not available";
   }
 }
 
-// === Ollama ===
+// === Ollama Formatting ===
 async function formatWithOllama(): Promise<void> {
   if (!settings.ollamaEnabled) {
-    setStatus("KI-Formatierung in Einstellungen aktivieren");
+    setStatus("Enable AI formatting in settings");
     return;
   }
 
-  const content = state.viewMode === "edit" ? getEditorContent() : state.content;
+  const tab = getActiveTab();
+  const content = tab ? (state.viewMode === "edit" ? getEditorContent() : tab.content) : "";
   if (!content.trim()) {
-    setStatus("Kein Text zum Formatieren");
+    setStatus("No text to format");
     return;
   }
 
-  // Show loading dialog
   const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
   showModal(ollamaDialog, inner);
   ollamaDialogSub.classList.add("hidden");
   ollamaCancel.classList.add("hidden");
-  ollamaDialogText.textContent = "Verbinde mit KI...";
+  ollamaDialogText.textContent = "Connecting to AI...";
   ollamaDialogSub.textContent = "";
   animateSpinner(ollamaSpinnerArc as unknown as SVGSVGElement);
 
   const running = await checkOllamaStatus();
   if (!running) {
     hideModal(ollamaDialog, inner);
-    setStatus("Ollama läuft nicht – prüfe Einstellungen");
+    setStatus("Ollama is not running – check settings");
     return;
   }
 
-  ollamaDialogText.textContent = "Formatiere Text...";
+  ollamaDialogText.textContent = "Formatting text...";
   ollamaDialogSub.classList.remove("hidden");
-  ollamaDialogSub.textContent = "Wird an Ollama gesendet…";
+  ollamaDialogSub.textContent = "Sending to Ollama…";
   try {
     const result = await invoke<string>("format_with_ollama", {
       endpoint: settings.ollamaEndpoint,
@@ -252,15 +393,18 @@ async function formatWithOllama(): Promise<void> {
       text: content,
     });
     hideModal(ollamaDialog, inner);
-    state.content = result;
-    state.modified = result !== state.originalContent;
-    setEditorContent(result);
+    if (tab) {
+      tab.content = result;
+      tab.modified = result !== tab.originalContent;
+      setEditorContent(result);
+    }
     updatePreview();
     updateTitle();
-    showSuccessOverlay("Text formatiert");
+    renderTabBar();
+    showSuccessOverlay("Text formatted");
   } catch (err) {
     hideModal(ollamaDialog, inner);
-    setStatus(`Fehler: ${err}`);
+    setStatus(`Error: ${err}`);
   }
 }
 
@@ -272,7 +416,6 @@ function goToSetupStep(step: number): void {
   }
   document.getElementById("setup-page-done")!.classList.add("hidden");
   document.getElementById("setup-page-error")!.classList.add("hidden");
-
   if (step <= 4) {
     document.getElementById(`setup-page-${step}`)!.classList.remove("hidden");
     document.getElementById(`setup-step-${step}`)!.classList.add("active");
@@ -296,7 +439,7 @@ async function waitForOllamaReady(): Promise<void> {
     if (ok) return;
     await new Promise((r) => setTimeout(r, 2000));
   }
-  throw new Error("Ollama wurde nicht rechtzeitig gestartet");
+  throw new Error("Ollama did not start in time");
 }
 
 function formatBytes(bytes: number): string {
@@ -309,39 +452,33 @@ async function startOllamaSetup(): Promise<void> {
   const model = setupModelSelect.value;
   settings.ollamaModel = model;
   settings.ollamaEnabled = true;
-  saveSettings();
+  saveSettingsFn();
 
   try {
-    // Step 2 – Download
     goToSetupStep(2);
     setupProgressBar.style.width = "0%";
-    setupDownloadText.textContent = "Lade Ollama herunter…";
-    setupProgressText.textContent = "Starte Download…";
+    setupDownloadText.textContent = "Downloading Ollama…";
+    setupProgressText.textContent = "Starting download…";
     animateSpinner(setupSpinnerArc as unknown as SVGSVGElement);
 
     const path = await invoke<string>("download_ollama");
-
     setupProgressBar.style.width = "100%";
-    setupProgressText.textContent = "Download abgeschlossen";
+    setupProgressText.textContent = "Download complete";
 
-    // Step 3 – Install
     goToSetupStep(3);
     animateSpinner(setupSpinnerArc2 as unknown as SVGSVGElement);
     await invoke("install_ollama", { path });
 
-    // Wait for Ollama to start
     await waitForOllamaReady();
 
-    // Step 4 – Pull model
     goToSetupStep(4);
-    setupPullText.textContent = `Lade ${model}…`;
+    setupPullText.textContent = `Loading ${model}…`;
     animateSpinner(setupSpinnerArc3 as unknown as SVGSVGElement);
     await invoke("pull_ollama_model", { model });
 
-    // Done
     goToSetupStep(5);
     updateOllamaStatusBar();
-    setStatus("KI-Formatierung einsatzbereit");
+    setStatus("AI formatting ready");
   } catch (err) {
     showSetupError(`${err}`);
   }
@@ -356,15 +493,12 @@ function showSetupError(msg: string): void {
 async function refreshModelSuggestions(): Promise<void> {
   if (!settings.ollamaEnabled) return;
   try {
-    const models = await invoke<string[]>("get_ollama_models", {
-      endpoint: settings.ollamaEndpoint,
-    });
+    const models = await invoke<string[]>("get_ollama_models", { endpoint: settings.ollamaEndpoint });
     const datalist = document.getElementById("model-suggestions")!;
     datalist.innerHTML = models.map((m) => `<option value="${m}">`).join("");
   } catch {}
 }
 
-// Überprüft beim Start ob Ollama fehlt und zeigt Setup an
 async function checkFirstRunOllama(): Promise<void> {
   const running = await checkOllamaStatus();
   if (!running && settings.ollamaEnabled) {
@@ -376,7 +510,8 @@ async function checkFirstRunOllama(): Promise<void> {
 function restartAutoSave(): void {
   if (autoSaveTimer) clearInterval(autoSaveTimer);
   autoSaveTimer = setInterval(() => {
-    if (state.modified && state.currentFile) {
+    const tab = getActiveTab();
+    if (tab && tab.modified && tab.file) {
       saveFile(true);
     }
   }, settings.autoSaveInterval);
@@ -384,13 +519,21 @@ function restartAutoSave(): void {
 
 // === File Operations ===
 function updateTitle(): void {
-  const name = state.currentFile
-    ? state.currentFile.split("\\").pop()?.split("/").pop()
-    : "Keine Datei geöffnet";
-  filenameEl.textContent = name ?? "Keine Datei geöffnet";
-  modifiedDot.classList.toggle("hidden", !state.modified);
-  statusFilenameBottom.textContent = state.currentFile ?? "";
-  document.title = state.modified ? `* ${name} - Remark` : `${name} - Remark`;
+  const tab = getActiveTab();
+  if (!tab) {
+    filenameEl.textContent = "No file open";
+    modifiedDot.classList.add("hidden");
+    statusFilenameBottom.textContent = "";
+    document.title = "Remark";
+    return;
+  }
+  const name = tab.file
+    ? tab.file.split("\\").pop()?.split("/").pop()
+    : "untitled";
+  filenameEl.textContent = name ?? "untitled";
+  modifiedDot.classList.toggle("hidden", !tab.modified);
+  statusFilenameBottom.textContent = tab.file ?? "";
+  document.title = tab.modified ? `* ${name} - Remark` : `${name} - Remark`;
 }
 
 function setStatus(msg: string): void {
@@ -399,7 +542,9 @@ function setStatus(msg: string): void {
 }
 
 function updatePreview(): void {
-  const content = state.viewMode === "edit" ? getEditorContent() : state.content;
+  const tab = getActiveTab();
+  if (!tab) return;
+  const content = state.viewMode === "edit" ? getEditorContent() : tab.content;
   if (content.trim()) {
     emptyState.classList.add("hidden");
     previewContainer.classList.remove("hidden");
@@ -410,13 +555,32 @@ function updatePreview(): void {
   }
 }
 
+function updateWordCount(): void {
+  const tab = getActiveTab();
+  if (!tab || !tab.content.trim()) {
+    wordCountEl.classList.add("hidden");
+    return;
+  }
+  const content = tab.content;
+  const words = content.match(/\S+/g)?.length ?? 0;
+  const chars = content.length;
+  const lines = content.split("\n").length;
+  const readingTime = Math.max(1, Math.round(words / 200));
+  wordCountEl.textContent = `${words}w · ${chars}c · ${lines}l · ${readingTime} min`;
+  wordCountEl.classList.remove("hidden");
+}
+
 function onContentChange(content: string): void {
-  state.content = content;
-  state.modified = content !== state.originalContent;
+  const tab = getActiveTab();
+  if (!tab) return;
+  tab.content = content;
+  tab.modified = content !== tab.originalContent;
   updateTitle();
+  renderTabBar();
   if (state.viewMode === "split" || state.viewMode === "view") {
     updatePreview();
   }
+  updateWordCount();
 }
 
 function setViewMode(mode: ViewMode): void {
@@ -433,7 +597,8 @@ function setViewMode(mode: ViewMode): void {
   if (mode === "edit" || mode === "split") {
     if (!editorContainer.querySelector(".cm-editor")) {
       createEditor(editorContainer, state.darkMode);
-      setEditorContent(state.content);
+      const tab = getActiveTab();
+      if (tab) setEditorContent(tab.content);
       setupScrollListeners();
     }
     if (edWasHidden) animate(editorPanel, { opacity: [0, 1] }, { duration: 0.2, ease: easeInOut });
@@ -457,58 +622,64 @@ async function openFile(path?: string): Promise<void> {
 
   try {
     const content = await invoke<string>("read_file", { path: filePath });
-    state.currentFile = filePath;
-    state.content = content;
-    state.originalContent = content;
-    state.modified = false;
-    updateTitle();
+    const tab = addTab(filePath, content);
+    tab.originalContent = content;
+    tab.modified = false;
     updatePreview();
     setEditorContent(content);
-    await showSuccessOverlay("Datei geöffnet");
+    updateTitle();
+    renderTabBar();
+    await showSuccessOverlay("File opened");
 
     settings.recentFiles = settings.recentFiles.filter((f) => f !== filePath);
     settings.recentFiles.unshift(filePath);
     if (settings.recentFiles.length > 10) settings.recentFiles.length = 10;
-    saveSettings();
+    saveSettingsFn();
+
+    // Set sidebar root to file's parent dir
+    loadSidebarDir(filePath);
   } catch (err) {
-    setStatus(`Fehler beim Öffnen: ${err}`);
+    setStatus(`Error opening: ${err}`);
   }
 }
 
 async function saveFile(silent = false): Promise<void> {
-  if (!state.currentFile) {
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  if (!tab.file) {
     const result = await save({
       filters: [{ name: "Markdown", extensions: ["md"] }],
-      defaultPath: "dokument.md",
+      defaultPath: "document.md",
     });
     if (!result) return;
-    state.currentFile = result as string;
+    tab.file = result as string;
     settings.recentFiles = settings.recentFiles.filter((f) => f !== result);
     settings.recentFiles.unshift(result as string);
     if (settings.recentFiles.length > 10) settings.recentFiles.length = 10;
-    saveSettings();
+    saveSettingsFn();
   }
   const content = getEditorContent();
   try {
-    await invoke("write_file", { path: state.currentFile, content });
-    state.content = content;
-    state.originalContent = content;
-    state.modified = false;
+    await invoke("write_file", { path: tab.file, content });
+    tab.content = content;
+    tab.originalContent = content;
+    tab.modified = false;
     updateTitle();
-    if (!silent) await showSuccessOverlay("Gespeichert");
+    renderTabBar();
+    if (!silent) await showSuccessOverlay("Saved");
   } catch (err) {
-    if (!silent) setStatus(`Fehler beim Speichern: ${err}`);
+    if (!silent) setStatus(`Error saving: ${err}`);
   }
 }
 
 function toggleTheme(): void {
   state.darkMode = !state.darkMode;
   document.documentElement.classList.toggle("dark", state.darkMode);
-  const icon = document.getElementById("theme-icon")!;
-  icon.innerHTML = state.darkMode
+  themeIcon.innerHTML = state.darkMode
     ? `<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>`
     : `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
-  animate(icon, { rotate: [0, 180] }, { duration: 0.3, ease: spring() });
+  animate(themeIcon, { rotate: [0, 180] }, { duration: 0.3, ease: spring() });
   setEditorDarkMode(state.darkMode);
 }
 
@@ -531,29 +702,237 @@ function findInEditor(query: string, direction: "next" | "prev" | "init" = "init
   dispatchEvent(new CustomEvent("editor-find", { detail: { query, direction } }));
 }
 
-function findNext(): void {
-  findInEditor(findInput.value, "next");
-}
-
-function findPrev(): void {
-  findInEditor(findInput.value, "prev");
-}
+function findNext(): void { findInEditor(findInput.value, "next"); }
+function findPrev(): void { findInEditor(findInput.value, "prev"); }
 
 function updateFindCount(): void {
   const q = findInput.value;
-  if (!q) {
-    findCount.textContent = "";
-    return;
-  }
-  const content = state.viewMode === "edit" ? getEditorContent() : state.content;
+  if (!q) { findCount.textContent = ""; return; }
+  const tab = getActiveTab();
+  const content = tab ? (state.viewMode === "edit" ? getEditorContent() : tab.content) : "";
   const matches = content.toLowerCase().split(q.toLowerCase()).length - 1;
-  findCount.textContent = `${matches} Treffer`;
+  findCount.textContent = `${matches} hits`;
 }
 
 // === Scroll Sync ===
 function syncScroll(source: HTMLElement, target: HTMLElement): void {
   const pct = source.scrollTop / (source.scrollHeight - source.clientHeight);
   target.scrollTop = pct * (target.scrollHeight - target.clientHeight);
+}
+
+// === Sidebar ===
+let expandedDirs = new Set<string>();
+let sidebarRoot: string | null = null;
+
+async function loadSidebarDir(filePath: string): Promise<void> {
+  const parts = filePath.replace(/\\/g, "/").split("/");
+  parts.pop();
+  const dir = parts.join("/");
+  if (!dir) return;
+  sidebarRoot = dir;
+  await refreshSidebarTree();
+  if (!state.sidebarOpen) {
+    state.sidebarOpen = true;
+    updateSidebarVisibility();
+  }
+}
+
+async function refreshSidebarTree(): Promise<void> {
+  if (!sidebarRoot) return;
+  try {
+    const entries = await invoke<FileEntry[]>("list_directory", { path: sidebarRoot });
+    sidebarFiles.innerHTML = renderTree(entries, sidebarRoot, 0);
+    attachTreeListeners(sidebarFiles);
+  } catch {}
+}
+
+function renderTree(entries: FileEntry[], basePath: string, depth: number): string {
+  let html = "";
+  const filtered = entries.filter((e) => e.is_dir || e.name.endsWith(".md") || e.name.endsWith(".markdown") || e.name.endsWith(".txt"));
+  for (const entry of filtered) {
+    const isExpanded = expandedDirs.has(entry.path);
+    const indent = depth * 16;
+    if (entry.is_dir) {
+      html += `<div class="file-item ${isExpanded ? "dir-open" : ""}" data-path="${entry.path}" data-dir="1" style="padding-left:${6 + indent}px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        <span>${entry.name}</span>
+      </div>`;
+      if (isExpanded) {
+        html += `<div class="file-children" data-parent="${entry.path}">loading…</div>`;
+      }
+    } else {
+      html += `<div class="file-item" data-path="${entry.path}" style="padding-left:${6 + indent}px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+        <span>${entry.name}</span>
+      </div>`;
+    }
+  }
+  return html;
+}
+
+function attachTreeListeners(container: HTMLElement): void {
+  container.querySelectorAll(".file-item[data-dir]").forEach((el) => {
+    el.addEventListener("click", async () => {
+      const path = (el as HTMLElement).dataset.path!;
+      if (expandedDirs.has(path)) {
+        expandedDirs.delete(path);
+      } else {
+        expandedDirs.add(path);
+      }
+      await refreshSidebarTree();
+      // Auto-expand the children
+      if (expandedDirs.has(path)) {
+        const childContainer = sidebarFiles.querySelector(`.file-children[data-parent="${path}"]`);
+        if (childContainer) {
+          try {
+            const entries = await invoke<FileEntry[]>("list_directory", { path });
+            childContainer.innerHTML = renderTree(entries, path, 1);
+            attachTreeListeners(childContainer as HTMLElement);
+          } catch {
+            childContainer.textContent = "error";
+          }
+        }
+      }
+    });
+  });
+  container.querySelectorAll(".file-item:not([data-dir])").forEach((el) => {
+    el.addEventListener("click", () => {
+      const path = (el as HTMLElement).dataset.path!;
+      openFile(path);
+    });
+  });
+}
+
+function updateSidebarVisibility(): void {
+  sidebar.classList.toggle("hidden", !state.sidebarOpen);
+  // Resize editor/preview
+  window.dispatchEvent(new Event("resize"));
+}
+
+function switchSidebarPanel(panel: "files" | "toc"): void {
+  state.sidebarPanel = panel;
+  sidebarPanelFiles.classList.toggle("active", panel === "files");
+  sidebarPanelToc.classList.toggle("active", panel === "toc");
+  sidebarFiles.classList.toggle("hidden", panel !== "files");
+  sidebarToc.classList.toggle("hidden", panel !== "toc");
+}
+
+// === TOC Update ===
+addEventListener("toc-update", ((e: CustomEvent) => {
+  const container = e.detail.container as HTMLElement;
+  const tocHtml = extractTOC(container);
+  sidebarToc.innerHTML = tocHtml || '<p class="text-xs text-muted p-2">No headings found</p>';
+  // Click handler for TOC links
+  sidebarToc.querySelectorAll(".toc-link").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const href = (a as HTMLAnchorElement).getAttribute("href");
+      if (href) {
+        const target = previewContainer.querySelector(href);
+        if (target) target.scrollIntoView({ behavior: "smooth" });
+      }
+    });
+  });
+}) as EventListener);
+
+// === Focus / Typewriter Mode ===
+function toggleTypewriter(): void {
+  state.typewriterMode = !state.typewriterMode;
+  document.getElementById("editor-container")!.classList.toggle("typewriter-mode", state.typewriterMode);
+  btnFocus.classList.toggle("active", state.typewriterMode);
+  setStatus(state.typewriterMode ? "Focus mode on" : "Focus mode off");
+}
+
+// === Export ===
+function getFullHTMLPage(): string {
+  const tab = getActiveTab();
+  if (!tab) return "";
+  // We need to render markdown to HTML, but we need to bypass the container-based rendering
+  // Import renderMarkdown directly
+  const bodyHtml = renderMarkdown(tab.content);
+
+  const isDark = state.darkMode;
+  const bg = isDark ? "#1e1e1e" : "#f5f0eb";
+  const text = isDark ? "#e8e4dd" : "#3d352c";
+  const accent = "#c4845a";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>${tab.file?.split("\\").pop()?.split("/").pop() || "document"}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github.min.css">
+<style>
+body { max-width: 800px; margin: 0 auto; padding: 40px 32px; background: ${bg}; color: ${text}; font-size: 15px; line-height: 1.7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+img { max-width: 100%; border-radius: 8px; }
+pre { background: ${isDark ? "#2a2a2a" : "#f0ece6"}; padding: 16px; border-radius: 8px; overflow-x: auto; }
+code { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.9em; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 0.6em 1em; border: 1px solid ${isDark ? "#3a3a3a" : "#ddd"}; text-align: left; }
+blockquote { border-left: 4px solid ${accent}; padding: 0.5em 1em; margin: 1em 0; background: ${isDark ? "#2a2a2a" : "#f0ece6"}; border-radius: 0 8px 8px 0; }
+a { color: ${accent}; }
+</style>
+</head><body>${bodyHtml}</body></html>`;
+}
+
+async function exportHTML(): Promise<void> {
+  const tab = getActiveTab();
+  if (!tab) { setStatus("No file to export"); return; }
+  const result = await save({
+    filters: [{ name: "HTML", extensions: ["html"] }],
+    defaultPath: "document.html",
+  });
+  if (!result) return;
+  try {
+    await invoke("write_file", { path: result, content: getFullHTMLPage() });
+    await showSuccessOverlay("HTML exported");
+  } catch (err) {
+    setStatus(`Export error: ${err}`);
+  }
+}
+
+function exportPDF(): void {
+  const html = getFullHTMLPage();
+  if (!html) { setStatus("No file to export"); return; }
+  const win = window.open("", "_blank");
+  if (!win) { setStatus("Popup blocked. Allow popups for PDF export."); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 500);
+}
+
+// === Image Paste ===
+async function handleImagePaste(e: ClipboardEvent): Promise<void> {
+  const tab = getActiveTab();
+  if (!tab || !tab.file) return;
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (!file) continue;
+      const buffer = await file.arrayBuffer();
+      const data = new Uint8Array(buffer);
+
+      const dir = tab.file.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
+      const assetsDir = dir + "/assets";
+      const ext = item.type === "image/png" ? "png" : item.type === "image/jpeg" ? "jpg" : "png";
+      const name = `pasted-${Date.now()}.${ext}`;
+      const savePath = `${assetsDir}/${name}`;
+
+      try {
+        await invoke("create_dir", { path: assetsDir });
+        await invoke("save_image", { path: savePath, data: Array.from(data) });
+        insertAtCursor(`![Pasted image](assets/${name})`);
+        setStatus("Image pasted");
+      } catch (err) {
+        setStatus(`Image paste error: ${err}`);
+      }
+      return;
+    }
+  }
 }
 
 // === Events ===
@@ -569,24 +948,43 @@ btnSplit.addEventListener("click", () => setViewMode("split"));
 btnTheme.addEventListener("click", toggleTheme);
 btnFind.addEventListener("click", showFindBar);
 btnOllama.addEventListener("click", formatWithOllama);
-btnSettings.addEventListener("click", () => {
-  const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
-  showModal(settingsModal, inner);
+btnSidebar.addEventListener("click", () => {
+  state.sidebarOpen = !state.sidebarOpen;
+  updateSidebarVisibility();
+});
+btnFocus.addEventListener("click", toggleTypewriter);
+btnNewTab.addEventListener("click", () => {
+  addTab(null, "");
+  setViewMode("edit");
+  setEditorContent("");
+  updateTitle();
+  renderTabBar();
+  setStatus("New tab");
+});
+
+btnExport.addEventListener("click", (e) => {
+  const rect = (e.target as HTMLElement).closest("button")!.getBoundingClientRect();
+  exportMenu.style.top = `${rect.bottom + 4}px`;
+  exportMenu.style.left = `${rect.left}px`;
+  exportMenu.classList.toggle("hidden");
+});
+exportHtmlBtn.addEventListener("click", () => { exportMenu.classList.add("hidden"); exportHTML(); });
+exportPdfBtn.addEventListener("click", () => { exportMenu.classList.add("hidden"); exportPDF(); });
+
+document.addEventListener("click", (e) => {
+  if (!exportMenu.contains(e.target as Node) && e.target !== btnExport) {
+    exportMenu.classList.add("hidden");
+  }
 });
 
 findCloseBtn.addEventListener("click", hideFindBar);
 findNextBtn.addEventListener("click", findNext);
 findPrevBtn.addEventListener("click", findPrev);
 findInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.shiftKey ? findPrev() : findNext();
-  }
+  if (e.key === "Enter") { e.shiftKey ? findPrev() : findNext(); }
   if (e.key === "Escape") hideFindBar();
 });
-findInput.addEventListener("input", () => {
-  findInEditor(findInput.value);
-  updateFindCount();
-});
+findInput.addEventListener("input", () => { findInEditor(findInput.value); updateFindCount(); });
 
 function closeSettings(e: MouseEvent): void {
   const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
@@ -607,36 +1005,38 @@ ollamaDialog.addEventListener("click", (e) => {
   }
 });
 
-// === Setup dialog events ===
-ollamaSetupBackdrop.addEventListener("click", () => hideOllamaSetup());
+ollamaSetupBackdrop.addEventListener("click", hideOllamaSetup);
 ollamaSetupClose.addEventListener("click", hideOllamaSetup);
 setupSkip.addEventListener("click", hideOllamaSetup);
 setupErrorClose.addEventListener("click", hideOllamaSetup);
 setupStart.addEventListener("click", startOllamaSetup);
 setupFinish.addEventListener("click", hideOllamaSetup);
 
-// Download progress from Rust
+// Download progress
 import { listen } from "@tauri-apps/api/event";
 listen<{ downloaded: number; total: number }>("ollama-download-progress", (event) => {
   const { downloaded, total } = event.payload;
   const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
   setupProgressBar.style.width = `${pct}%`;
-  setupDownloadText.textContent = `Lade Ollama herunter… (${formatBytes(downloaded)} / ${formatBytes(total)})`;
+  setupDownloadText.textContent = `Downloading Ollama… (${formatBytes(downloaded)} / ${formatBytes(total)})`;
   setupProgressText.textContent = `${pct}%`;
 });
 
-// Refresh model suggestions when settings is opened
 document.getElementById("btn-settings")!.addEventListener("click", () => {
   refreshModelSuggestions();
 });
 
-// Setup button in settings
 document.getElementById("setting-install-ollama")?.addEventListener("click", () => {
   const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
   hideModal(settingsModal, inner);
   setTimeout(() => showOllamaSetup(), 300);
 });
 
+// Sidebar panel switching
+sidebarPanelFiles.addEventListener("click", () => switchSidebarPanel("files"));
+sidebarPanelToc.addEventListener("click", () => switchSidebarPanel("toc"));
+
+// Keyboard shortcuts
 document.addEventListener("keydown", (e) => {
   const ctrl = e.ctrlKey || e.metaKey;
   if (ctrl && e.key === "o") { e.preventDefault(); openFile(); }
@@ -645,6 +1045,8 @@ document.addEventListener("keydown", (e) => {
   if (ctrl && e.key === "e") { e.preventDefault(); setViewMode("edit"); }
   if (ctrl && e.shiftKey && e.key === "E") { e.preventDefault(); setViewMode("split"); }
   if (ctrl && e.key === "f") { e.preventDefault(); showFindBar(); }
+  if (ctrl && e.key === "n") { e.preventDefault(); btnNewTab.click(); }
+  if (ctrl && e.shiftKey && e.key === "b") { e.preventDefault(); btnSidebar.click(); }
   if (e.key === "F3") { e.preventDefault(); findNext(); }
   if (e.key === "Escape" && !findBar.classList.contains("hidden")) hideFindBar();
   if (e.key === "Escape" && !settingsModal.classList.contains("hidden")) {
@@ -655,9 +1057,20 @@ document.addEventListener("keydown", (e) => {
     const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
     hideModal(ollamaDialog, inner);
   }
+
+  // Tab switching with Ctrl+Tab / Ctrl+Shift+Tab
+  if (ctrl && e.key === "Tab") {
+    e.preventDefault();
+    if (state.tabs.length < 2) return;
+    const idx = state.tabs.findIndex((t) => t.id === state.activeTabId);
+    const next = e.shiftKey
+      ? (idx - 1 + state.tabs.length) % state.tabs.length
+      : (idx + 1) % state.tabs.length;
+    switchTab(state.tabs[next].id);
+  }
 });
 
-// Drag & Drop (Tauri-native)
+// Drag & Drop
 getCurrentWindow().onDragDropEvent(async (event) => {
   if (event.payload.type === "over") {
     dropOverlay.classList.remove("hidden");
@@ -670,12 +1083,15 @@ getCurrentWindow().onDragDropEvent(async (event) => {
     const path = event.payload.paths[0];
     if (!path) return;
     if (!path.endsWith(".md") && !path.endsWith(".markdown") && !path.endsWith(".txt")) {
-      setStatus("Nur .md, .markdown oder .txt Dateien");
+      setStatus("Only .md, .markdown or .txt files");
       return;
     }
     await openFile(path);
   }
 });
+
+// Image paste on editor
+document.addEventListener("paste", handleImagePaste);
 
 // Scroll sync
 const previewScrollEl = document.getElementById("preview-panel")!;
@@ -710,9 +1126,16 @@ async function init(): Promise<void> {
   document.documentElement.classList.toggle("dark", state.darkMode);
   setViewMode("view");
   updateTitle();
-      setStatus("Bereit");
+  setStatus("Ready");
 
-  // First-run check – if Ollama fehlt, Setup vorschlagen
+  // If no tabs, add a default empty one
+  if (state.tabs.length === 0) {
+    addTab(null, "");
+    setEditorContent("");
+    updateTitle();
+    renderTabBar();
+  }
+
   await checkFirstRunOllama();
 
   ollamaCheckTimer = setInterval(updateOllamaStatusBar, 30000);
