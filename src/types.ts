@@ -28,6 +28,7 @@ export interface Settings {
   splitRatio?: number;
   sessionTabs?: { file: string | null; scrollTop: number }[];
   sessionActiveTab?: number;
+  ollamaSetupComplete?: boolean;
 }
 
 export interface FileEntry {

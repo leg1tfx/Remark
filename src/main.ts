@@ -39,6 +39,7 @@ const defaultSettings: Settings = {
   autoSaveInterval: 2000,
   recentFiles: [],
   splitRatio: 0.5,
+  ollamaSetupComplete: false,
 };
 
 let settings: Settings = { ...defaultSettings };
@@ -341,7 +342,7 @@ function bindSettingsUI(): void {
     settings.ollamaEnabled = (e.target as HTMLInputElement).checked;
     saveSettingsFn();
     updateOllamaStatusBar();
-    if (settings.ollamaEnabled) {
+    if (settings.ollamaEnabled && !settings.ollamaSetupComplete) {
       const running = await checkOllamaStatus();
       if (!running) {
         const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
@@ -513,6 +514,8 @@ async function startOllamaSetup(): Promise<void> {
     animateSpinner(setupSpinnerArc3 as unknown as SVGSVGElement);
     await invoke("pull_ollama_model", { model });
 
+    settings.ollamaSetupComplete = true;
+    saveSettingsFn();
     goToSetupStep(5);
     updateOllamaStatusBar();
     setStatus("AI formatting ready");
@@ -564,7 +567,7 @@ async function checkFirstRunOllama(): Promise<void> {
     if (running) return;
     if (i < 2) await new Promise((r) => setTimeout(r, 2000));
   }
-  if (settings.ollamaEnabled) {
+  if (settings.ollamaEnabled && !settings.ollamaSetupComplete) {
     showOllamaSetup();
   }
 }
