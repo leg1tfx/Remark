@@ -105,11 +105,16 @@ async fn format_with_ollama(
     text: String,
 ) -> Result<String, String> {
     let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
+    let prompt = format!(
+        "Reformat the TEXT below as clean Markdown. Preserve all original words exactly—never add, remove, or paraphrase.\n\nTEXT:\n{}\n\nReformat the TEXT above. Output a JSON object with key \"formatted_markdown\".",
+        text
+    );
     let body = serde_json::json!({
         "model": model,
-        "system": "You are a Markdown formatting tool. Output ONLY the reformatted Markdown. Never include greetings, explanations, or commentary. Never say 'Here is', 'I've', 'Certainly', or any preamble. Output the Markdown directly with no prefix or suffix.",
-        "prompt": text,
+        "system": "Example: input: \"Step 1 install node\"  output: {{\"formatted_markdown\": \"## Step 1\\n\\nInstall node\"}}",
+        "prompt": prompt,
         "stream": false,
+        "format": "json",
         "options": { "temperature": 0.05 }
     });
     let client = reqwest::Client::builder()
@@ -130,6 +135,12 @@ async fn format_with_ollama(
         .as_str()
         .map(String::from)
         .ok_or_else(|| "Empty response from Ollama".to_string())?;
+    // Try to extract from JSON envelope (format:json forces JSON output)
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+        if let Some(s) = val.get("formatted_markdown").and_then(|v| v.as_str()) {
+            return Ok(clean_ollama_output(s));
+        }
+    }
     Ok(clean_ollama_output(&raw))
 }
 
