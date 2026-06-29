@@ -106,12 +106,12 @@ async fn format_with_ollama(
 ) -> Result<String, String> {
     let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
     let prompt = format!(
-        "Reformat the TEXT below as clean Markdown. Preserve all original words exactly—never add, remove, or paraphrase.\n\nTEXT:\n{}\n\nReformat the TEXT above. Output a JSON object with key \"formatted_markdown\".",
+        "WRONG output (do NOT do this):\n# Step 1 install node\n# Step 2 run npm install\n# Step 3 test\n\nCORRECT output:\n## Step 1\nInstall node.\n\n## Step 2\nRun `npm install`.\n\n## Step 3\nTest the setup.\n\nNow format the TEXT below the CORRECT way.\n\nTEXT:\n{}\n\nOutput a JSON object with key \"formatted_markdown\".",
         text
     );
     let body = serde_json::json!({
         "model": model,
-        "system": "Example: input: \"Step 1 install node\"  output: {{\"formatted_markdown\": \"## Step 1\\n\\nInstall node\"}}",
+        "system": "You are a Markdown formatter. RULES:\n- Use # ONLY for the title if there is one clear title.\n- Use ## for major sections (at most 3-5 in a document).\n- NEVER put # or ## on a plain sentence, list item, or step description.\n- Most lines should be plain paragraphs, bullet lists (-), or numbered lists.\n- Never change, add, or remove any words. Only add Markdown structure.\n- Output JSON with key \"formatted_markdown\".",
         "prompt": prompt,
         "stream": false,
         "format": "json",
