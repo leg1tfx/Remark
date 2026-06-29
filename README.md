@@ -46,16 +46,18 @@ If Ollama is missing, a setup wizard will guide you through installation on firs
 
 ## Roadmap Ideas
 
-- Multi-tab support
-- Export to PDF / HTML
-- File tree sidebar (project browsing)
-- Image paste from clipboard
-- Table of contents generation
-- KaTeX math / Mermaid diagram rendering
-- Focus / typewriter mode
-- Word count & reading time
-- Spell checking
-- Custom user CSS for preview
+- Session restore (reopen tabs from last session)
+- Custom user CSS for preview styling
+- Resizable split pane (drag editor/preview divider)
+- Command palette (Ctrl+Shift+P)
+- Clickable task list checkboxes in preview
+- Vim / Emacs keybindings
+- Markdown linting & link checker
+- Git integration (diff view, staged changes)
+- Auto-updater
+- Multi-cursor editing
+- Snippet / template support
+- Plugin system
 
 ## License
 
