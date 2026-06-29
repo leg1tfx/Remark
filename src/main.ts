@@ -142,14 +142,14 @@ function hideWithFade(el: HTMLElement, duration = 0.15): void {
 
 function showModal(el: HTMLElement, inner: HTMLElement): void {
   el.classList.remove("hidden");
-  animate(el, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
-  animate(inner, { opacity: [0, 1], scale: [0.92, 1] }, { duration: 0.2, ease: spring() });
+  animate(el, { opacity: [0, 1] }, { duration: 0.2, ease: easeInOut });
+  animate(inner, { opacity: [0, 1], scale: [0.92, 1], y: [24, 0] }, { duration: 0.35, ease: spring() });
 }
 
 function hideModal(el: HTMLElement, inner: HTMLElement): void {
   try {
-    animate(inner, { opacity: [1, 0], scale: [1, 0.95] }, { duration: 0.15, ease: easeInOut });
-    animate(el, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut });
+    animate(inner, { opacity: [1, 0], scale: [1, 0.96], y: [0, -12] }, { duration: 0.15, ease: easeInOut });
+    animate(el, { opacity: [1, 0] }, { duration: 0.12, ease: easeInOut });
     setTimeout(() => el.classList.add("hidden"), 200);
   } catch {
     el.classList.add("hidden");
@@ -162,9 +162,9 @@ function animateSpinner(el: SVGElement, loop = true): void {
 
 function hideSuccessOverlay(): void {
   try {
-    animate(successToast, { opacity: [1, 0], scale: [1, 0.95] }, { duration: 0.15, ease: easeInOut });
-    animate(successOverlay, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut });
-    setTimeout(() => successOverlay.classList.add("hidden"), 200);
+    animate(successToast, { opacity: [1, 0], scale: [1, 0.9], y: [0, -20] }, { duration: 0.18, ease: easeInOut });
+    animate(successOverlay, { opacity: [1, 0] }, { duration: 0.18, ease: easeInOut });
+    setTimeout(() => successOverlay.classList.add("hidden"), 220);
   } catch {
     successOverlay.classList.add("hidden");
   }
@@ -179,12 +179,13 @@ async function showSuccessOverlay(msg: string): Promise<void> {
     successCheck.setAttribute("stroke-dasharray", "36");
     successCheck.setAttribute("stroke-dashoffset", "36");
 
-    animate(successOverlay, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
-    animate(successToast, { opacity: [0, 1], scale: [0.92, 1] }, { duration: 0.2, ease: spring() });
-    await animate(successCircle, { strokeDashoffset: [176, 0] }, { duration: 0.3, ease: easeInOut }).finished;
-    await animate(successCheck, { strokeDashoffset: [36, 0] }, { duration: 0.2, ease: easeInOut }).finished;
+    animate(successOverlay, { opacity: [0, 1] }, { duration: 0.2, ease: easeInOut });
+    await animate(successToast, { opacity: [0, 1], scale: [0.85, 1.05, 1], y: [30, 0] }, { duration: 0.5, ease: spring() }).finished;
 
-    await new Promise((r) => setTimeout(r, 800));
+    await animate(successCircle, { strokeDashoffset: [176, 0] }, { duration: 0.35, ease: easeInOut }).finished;
+    await animate(successCheck, { strokeDashoffset: [36, 0] }, { duration: 0.25, ease: easeInOut }).finished;
+
+    await new Promise((r) => setTimeout(r, 1000));
     hideSuccessOverlay();
   } catch {
     successOverlay.classList.add("hidden");
@@ -1081,8 +1082,20 @@ btnViewMode.addEventListener("click", (e) => {
   }
 });
 
+function showMoreMenu(): void {
+  moreMenu.classList.remove("hidden");
+  animate(moreMenu, { opacity: [0, 1], scale: [0.95, 1], y: [-8, 0] }, { duration: 0.18, ease: easeInOut });
+}
+function hideMoreMenu(): void {
+  const wasHidden = moreMenu.classList.contains("hidden");
+  if (wasHidden) return;
+  animate(moreMenu, { opacity: [1, 0], scale: [1, 0.95], y: [0, -6] }, { duration: 0.1, ease: easeInOut });
+  setTimeout(() => moreMenu.classList.add("hidden"), 130);
+}
+
 btnMore.addEventListener("click", (e) => {
   e.stopPropagation();
+  if (!moreMenu.classList.contains("hidden")) { hideMoreMenu(); return; }
   const rect = (e.target as HTMLElement).closest("button")!.getBoundingClientRect();
   const menuW = 200;
   const gap = 4;
@@ -1090,17 +1103,17 @@ btnMore.addEventListener("click", (e) => {
   const clampedLeft = Math.max(8, Math.min(rect.left, vw - menuW - 8));
   moreMenu.style.top = `${rect.bottom + gap}px`;
   moreMenu.style.left = `${clampedLeft}px`;
-  moreMenu.classList.toggle("hidden");
+  showMoreMenu();
 });
 
-menuFocus.addEventListener("click", () => { moreMenu.classList.add("hidden"); toggleTypewriter(); });
-menuOllama.addEventListener("click", () => { moreMenu.classList.add("hidden"); formatWithOllama(); });
-menuExportHtml.addEventListener("click", () => { moreMenu.classList.add("hidden"); exportHTML(); });
-menuExportPdf.addEventListener("click", () => { moreMenu.classList.add("hidden"); exportPDF(); });
+menuFocus.addEventListener("click", () => { hideMoreMenu(); toggleTypewriter(); });
+menuOllama.addEventListener("click", () => { hideMoreMenu(); formatWithOllama(); });
+menuExportHtml.addEventListener("click", () => { hideMoreMenu(); exportHTML(); });
+menuExportPdf.addEventListener("click", () => { hideMoreMenu(); exportPDF(); });
 
 document.addEventListener("click", (e) => {
   if (!moreMenu.contains(e.target as Node) && e.target !== btnMore && !(e.target as HTMLElement).closest("#btn-more")) {
-    moreMenu.classList.add("hidden");
+    hideMoreMenu();
   }
 });
 
@@ -1174,7 +1187,7 @@ document.addEventListener("keydown", (e) => {
   if (ctrl && e.shiftKey && e.key === "V") { e.preventDefault(); setViewMode("view"); }
   if (ctrl && e.key === "e") { e.preventDefault(); setViewMode("edit"); }
   if (ctrl && e.shiftKey && e.key === "E") { e.preventDefault(); setViewMode("split"); }
-  if (e.key === "Escape" && !moreMenu.classList.contains("hidden")) { moreMenu.classList.add("hidden"); }
+  if (e.key === "Escape" && !moreMenu.classList.contains("hidden")) { hideMoreMenu(); }
   if (ctrl && e.key === "f") { e.preventDefault(); showFindBar(); }
   if (ctrl && e.key === "n") { e.preventDefault(); btnNewTab.click(); }
   if (ctrl && e.shiftKey && e.key === "b") { e.preventDefault(); btnSidebar.click(); }
