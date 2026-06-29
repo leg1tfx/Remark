@@ -84,6 +84,14 @@ const ollamaDialogSub = document.getElementById("ollama-dialog-sub")!;
 const ollamaCancel = document.getElementById("ollama-cancel")!;
 
 const successOverlay = document.getElementById("success-overlay")!;
+const successToast = document.getElementById("success-toast")!;
+const successBackdrop = document.getElementById("success-backdrop")!;
+
+const dlOverlay = document.getElementById("download-overlay")!;
+const dlTitle = document.getElementById("download-title")!;
+const dlStatus = document.getElementById("download-status")!;
+const dlBar = document.getElementById("download-progress-bar")!;
+const dlPercent = document.getElementById("download-percent")!;
 
 const ollamaSetup = document.getElementById("ollama-setup")!;
 const ollamaSetupBackdrop = document.getElementById("ollama-setup-backdrop")!;
@@ -160,6 +168,11 @@ function animateSpinner(el: SVGElement, loop = true): void {
   animate(el, { rotate: [0, 360] }, { duration: 1, ease: "linear", repeat: loop ? Infinity : 0 });
 }
 
+function hideSuccessOverlay(): void {
+  animate(successToast, { opacity: [1, 0], scale: [1, 0.95] }, { duration: 0.15, ease: easeInOut, onFinish: () => successOverlay.classList.add("hidden") });
+  animate(successOverlay, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut });
+}
+
 async function showSuccessOverlay(msg: string): Promise<void> {
   successMsgEl.textContent = msg;
   successOverlay.classList.remove("hidden");
@@ -169,11 +182,35 @@ async function showSuccessOverlay(msg: string): Promise<void> {
   successCheck.setAttribute("stroke-dashoffset", "36");
 
   animate(successOverlay, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
+  animate(successToast, { opacity: [0, 1], scale: [0.92, 1] }, { duration: 0.2, ease: spring() });
   await animate(successCircle, { strokeDashoffset: [176, 0] }, { duration: 0.3, ease: easeInOut }).finished;
   await animate(successCheck, { strokeDashoffset: [36, 0] }, { duration: 0.2, ease: easeInOut }).finished;
 
-  await new Promise((r) => setTimeout(r, 800));
-  animate(successOverlay, { opacity: [1, 0], scale: [1, 0.95] }, { duration: 0.2, ease: easeInOut, onFinish: () => successOverlay.classList.add("hidden") });
+  await new Promise((r) => setTimeout(r, 1200));
+  hideSuccessOverlay();
+}
+
+successBackdrop.addEventListener("click", hideSuccessOverlay);
+
+// === Download Overlay ===
+function showDownloadOverlay(title: string): void {
+  dlTitle.textContent = title;
+  dlStatus.textContent = "Starting…";
+  dlBar.style.width = "0%";
+  dlPercent.textContent = "0%";
+  dlOverlay.classList.remove("hidden");
+  animate(dlOverlay, { opacity: [0, 1], y: [-8, 0] }, { duration: 0.2, ease: easeInOut });
+}
+
+function hideDownloadOverlay(): void {
+  animate(dlOverlay, { opacity: [1, 0], y: [0, -8] }, { duration: 0.15, ease: easeInOut, onFinish: () => dlOverlay.classList.add("hidden") });
+}
+
+function updateDownloadProgress(downloaded: number, total: number): void {
+  const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+  dlBar.style.width = `${pct}%`;
+  dlPercent.textContent = `${pct}%`;
+  dlStatus.textContent = `${formatBytes(downloaded)} / ${formatBytes(total)}`;
 }
 
 // === Tabs ===
@@ -318,7 +355,7 @@ async function saveSettingsFn(): Promise<void> {
 function applySettingsUI(): void {
   (document.getElementById("setting-ollama-enabled") as HTMLInputElement).checked = settings.ollamaEnabled;
   (document.getElementById("setting-ollama-endpoint") as HTMLInputElement).value = settings.ollamaEndpoint;
-  (document.getElementById("setting-ollama-model") as HTMLInputElement).value = settings.ollamaModel;
+  (document.getElementById("setting-ollama-model") as HTMLSelectElement).value = settings.ollamaModel;
   (document.getElementById("setting-autosave") as HTMLInputElement).value = String(settings.autoSaveInterval);
   updateOllamaStatusBar();
   restartAutoSave();
@@ -335,8 +372,11 @@ function bindSettingsUI(): void {
     saveSettingsFn();
   });
   document.getElementById("setting-ollama-model")!.addEventListener("change", (e) => {
-    settings.ollamaModel = (e.target as HTMLInputElement).value.trim() || defaultSettings.ollamaModel;
-    saveSettingsFn();
+    const val = (e.target as HTMLSelectElement).value;
+    if (val) {
+      settings.ollamaModel = val;
+      saveSettingsFn();
+    }
   });
   document.getElementById("setting-autosave")!.addEventListener("change", (e) => {
     settings.autoSaveInterval = Math.max(500, parseInt((e.target as HTMLInputElement).value) || 2000);
@@ -475,10 +515,12 @@ async function startOllamaSetup(): Promise<void> {
     setupDownloadText.textContent = "Downloading Ollama…";
     setupProgressText.textContent = "Starting download…";
     animateSpinner(setupSpinnerArc as unknown as SVGSVGElement);
+    showDownloadOverlay("Downloading Ollama…");
 
     const path = await invoke<string>("download_ollama");
     setupProgressBar.style.width = "100%";
     setupProgressText.textContent = "Download complete";
+    hideDownloadOverlay();
 
     goToSetupStep(3);
     animateSpinner(setupSpinnerArc2 as unknown as SVGSVGElement);
@@ -495,6 +537,7 @@ async function startOllamaSetup(): Promise<void> {
     updateOllamaStatusBar();
     setStatus("AI formatting ready");
   } catch (err) {
+    hideDownloadOverlay();
     showSetupError(`${err}`);
   }
 }
@@ -506,12 +549,34 @@ function showSetupError(msg: string): void {
 }
 
 async function refreshModelSuggestions(): Promise<void> {
+  const select = document.getElementById("setting-ollama-model") as HTMLSelectElement;
+  const currentVal = settings.ollamaModel;
+  select.innerHTML = `<option value="llama3.2:3b">llama3.2:3b (recommended)</option>`;
   if (!settings.ollamaEnabled) return;
   try {
     const models = await invoke<string[]>("get_ollama_models", { endpoint: settings.ollamaEndpoint });
-    const datalist = document.getElementById("model-suggestions")!;
-    datalist.innerHTML = models.map((m) => `<option value="${m}">`).join("");
-  } catch {}
+    if (models.length > 0) {
+      select.innerHTML = `<option value="">— Select a model —</option>`;
+      models.forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = m;
+        if (m === currentVal) opt.selected = true;
+        select.appendChild(opt);
+      });
+      // Add recommended at top if not in list
+      if (!models.includes("llama3.2:3b")) {
+        const rec = document.createElement("option");
+        rec.value = "llama3.2:3b";
+        rec.textContent = "llama3.2:3b (recommended)";
+        rec.selected = currentVal === "llama3.2:3b";
+        select.prepend(rec);
+      }
+    }
+    select.value = currentVal;
+  } catch {
+    // Keep default options
+  }
 }
 
 async function checkFirstRunOllama(): Promise<void> {
@@ -1056,10 +1121,14 @@ setupFinish.addEventListener("click", hideOllamaSetup);
 import { listen } from "@tauri-apps/api/event";
 listen<{ downloaded: number; total: number }>("ollama-download-progress", (event) => {
   const { downloaded, total } = event.payload;
+  updateDownloadProgress(downloaded, total);
+  // Also update setup dialog if open
   const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
-  setupProgressBar.style.width = `${pct}%`;
-  setupDownloadText.textContent = `Downloading Ollama… (${formatBytes(downloaded)} / ${formatBytes(total)})`;
-  setupProgressText.textContent = `${pct}%`;
+  if (!setupProgressBar.classList.contains("hidden")) {
+    setupProgressBar.style.width = `${pct}%`;
+    setupDownloadText.textContent = `Downloading Ollama… (${formatBytes(downloaded)} / ${formatBytes(total)})`;
+    setupProgressText.textContent = `${pct}%`;
+  }
 });
 
 document.getElementById("btn-settings")!.addEventListener("click", openSettings);
@@ -1079,6 +1148,8 @@ document.getElementById("setting-install-ollama")?.addEventListener("click", () 
   hideModal(settingsModal, inner);
   setTimeout(() => showOllamaSetup(), 300);
 });
+
+// Also wire download overlay to the direct download from settings (optional future use)
 
 // Sidebar panel switching
 sidebarPanelFiles.addEventListener("click", () => switchSidebarPanel("files"));
