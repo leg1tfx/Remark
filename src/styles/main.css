@@ -131,22 +131,6 @@ html, body {
   box-shadow: 0 16px 48px oklch(0 0 0 / 0.2);
 }
 
-#settings-modal,
-#ollama-dialog,
-#ollama-setup,
-#success-overlay,
-#export-menu {
-  display: flex;
-}
-
-#settings-modal.hidden,
-#ollama-dialog.hidden,
-#ollama-setup.hidden,
-#success-overlay.hidden,
-#export-menu.hidden {
-  display: none;
-}
-
 select.input {
   appearance: auto;
 }
@@ -365,13 +349,29 @@ select.input {
   transition: none;
 }
 
+/* === Overlay base display === */
+#settings-modal,
+#ollama-dialog,
+#ollama-setup,
+#success-overlay,
+#download-overlay,
+#more-menu {
+  display: flex;
+}
+#settings-modal.hidden,
+#ollama-dialog.hidden,
+#ollama-setup.hidden,
+#success-overlay.hidden,
+#download-overlay.hidden,
+#more-menu.hidden {
+  display: none !important;
+}
+
 /* === Download Overlay === */
 #download-overlay {
-  display: block;
   z-index: 100;
-}
-#download-overlay.hidden {
-  display: none !important;
+  align-items: flex-start;
+  justify-content: flex-end;
 }
 .download-card {
   background: var(--surface-alpha);
@@ -393,16 +393,20 @@ select.input {
 
 /* === Success Toast === */
 #success-overlay {
-  display: flex;
-}
-#success-overlay.hidden {
-  display: none;
+  align-items: center;
+  justify-content: center;
 }
 .toast-notification {
   background: var(--surface-alpha);
   backdrop-filter: blur(20px);
   border: 1px solid var(--border-alpha);
   box-shadow: 0 16px 48px oklch(0 0 0 / 0.2);
+}
+
+/* === More Menu === */
+#more-menu {
+  position: fixed;
+  z-index: 110;
 }
 
 /* === Tab Bar === */

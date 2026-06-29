@@ -1084,12 +1084,17 @@ btnViewMode.addEventListener("click", (e) => {
   }
 });
 
-// More menu
+// More menu - right-aligned, avoid window edge
 btnMore.addEventListener("click", (e) => {
   e.stopPropagation();
   const rect = (e.target as HTMLElement).closest("button")!.getBoundingClientRect();
-  moreMenu.style.top = `${rect.bottom + 4}px`;
-  moreMenu.style.left = `${rect.left}px`;
+  const menuW = 200;
+  const gap = 4;
+  const vw = window.innerWidth;
+  const menuLeft = rect.right - menuW;
+  const clampedLeft = Math.max(8, menuLeft);
+  moreMenu.style.top = `${rect.bottom + gap}px`;
+  moreMenu.style.left = `${clampedLeft}px`;
   moreMenu.classList.toggle("hidden");
 });
 
@@ -1155,16 +1160,6 @@ listen<{ downloaded: number; total: number }>("ollama-download-progress", (event
 });
 
 document.getElementById("btn-settings")!.addEventListener("click", openSettings);
-
-document.getElementById("btn-register-assoc")!.addEventListener("click", async () => {
-  try {
-    const exePath = await invoke<string>("register_file_assoc");
-    setStatus("Registered: .md files open with Remark");
-    showSuccessOverlay("File association set");
-  } catch (err) {
-    setStatus(`Error: ${err}`);
-  }
-});
 
 document.getElementById("setting-install-ollama")?.addEventListener("click", () => {
   const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
