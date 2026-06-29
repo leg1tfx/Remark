@@ -111,14 +111,14 @@ export function getEditorContent(): string {
   return view.state.doc.toString();
 }
 
-export function setEditorDarkMode(dark: boolean): void {
+export function setEditorDarkMode(dark: boolean, language = "en"): void {
   if (!view) return;
   const pos = view.state.selection.main.head;
   const content = view.state.doc.toString();
   const parent = view.dom.parentElement;
   if (!parent) return;
   view.destroy();
-  view = createEditor(parent, dark);
+  view = createEditor(parent, dark, language);
   setEditorContent(content);
   view.dispatch({
     selection: { anchor: pos, head: pos },

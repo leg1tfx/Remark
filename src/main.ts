@@ -45,7 +45,7 @@ const defaultSettings: Settings = {
 
 let settings: Settings = { ...defaultSettings };
 let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
-let ollamaCheckTimer: ReturnType<typeof setInterval> | null = null;
+let ollamaCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
 // === DOM refs ===
 const editorPanel = document.getElementById("editor-panel")!;
@@ -438,6 +438,12 @@ async function formatWithOllama(): Promise<void> {
     return;
   }
 
+  const running = await checkOllamaStatus();
+  if (!running) {
+    setStatus("Ollama is not running – check settings");
+    return;
+  }
+
   const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
   showModal(ollamaDialog, inner);
   ollamaDialogSub.classList.add("hidden");
@@ -445,13 +451,6 @@ async function formatWithOllama(): Promise<void> {
   ollamaDialogSub.textContent = "";
   ollamaSpinnerEl.style.display = "";
   animateSpinner(ollamaSpinnerEl as unknown as SVGSVGElement);
-
-  const running = await checkOllamaStatus();
-  if (!running) {
-    hideModal(ollamaDialog, inner);
-    setStatus("Ollama is not running – check settings");
-    return;
-  }
 
   ollamaDialogText.textContent = "Formatting text...";
   ollamaDialogSub.classList.remove("hidden");
@@ -806,7 +805,7 @@ function toggleTheme(): void {
     ? `<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>`
     : `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
   animate(themeIcon, { rotate: [0, 180] }, { duration: 0.3, ease: spring() });
-  setEditorDarkMode(state.darkMode);
+  setEditorDarkMode(state.darkMode, settings.language);
 }
 
 // === Find / Search ===
@@ -1038,7 +1037,14 @@ function exportPDF(): void {
   win.document.write(html);
   win.document.close();
   win.focus();
-  setTimeout(() => win.print(), 500);
+  const poll = () => {
+    if (win.document.body && win.document.body.innerHTML.length > 100) {
+      win.print();
+    } else {
+      requestAnimationFrame(poll);
+    }
+  };
+  poll();
 }
 
 // === Image Paste ===
@@ -1144,10 +1150,10 @@ btnMore.addEventListener("click", (e) => {
   showMoreMenu();
 });
 
-menuFocus.addEventListener("click", () => { hideMoreMenu(); toggleTypewriter(); });
-menuOllama.addEventListener("click", () => { hideMoreMenu(); formatWithOllama(); });
-menuExportHtml.addEventListener("click", () => { hideMoreMenu(); exportHTML(); });
-menuExportPdf.addEventListener("click", () => { hideMoreMenu(); exportPDF(); });
+menuFocus.addEventListener("click", (e) => { e.stopPropagation(); hideMoreMenu(); toggleTypewriter(); });
+menuOllama.addEventListener("click", (e) => { e.stopPropagation(); hideMoreMenu(); formatWithOllama(); });
+menuExportHtml.addEventListener("click", (e) => { e.stopPropagation(); hideMoreMenu(); exportHTML(); });
+menuExportPdf.addEventListener("click", (e) => { e.stopPropagation(); hideMoreMenu(); exportPDF(); });
 
 document.addEventListener("click", (e) => {
   if (!moreMenu.contains(e.target as Node) && e.target !== btnMore && !(e.target as HTMLElement).closest("#btn-more")) {
@@ -1574,7 +1580,11 @@ async function init(): Promise<void> {
 
   await checkFirstRunOllama();
 
-  ollamaCheckTimer = setInterval(updateOllamaStatusBar, 30000);
+  async function pollOllama(): Promise<void> {
+    await updateOllamaStatusBar();
+    ollamaCheckTimer = setTimeout(pollOllama, 30000);
+  }
+  pollOllama();
 
   // Init resizer
   initResizer();
