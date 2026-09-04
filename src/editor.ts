@@ -3,7 +3,6 @@ import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { oneDark } from "@codemirror/theme-one-dark";
 import { searchKeymap, findNext, findPrevious, closeSearchPanel, openSearchPanel } from "@codemirror/search";
 
 let view: EditorView | null = null;
@@ -20,7 +19,7 @@ export function setEditorLanguage(lang: string): void {
   if (cmContent) cmContent.lang = lang;
 }
 
-export function createEditor(container: HTMLElement, darkMode: boolean, language = "en"): EditorView {
+export function createEditor(container: HTMLElement, language = "en"): EditorView {
   const state = EditorState.create({
     doc: "",
     extensions: [
@@ -63,7 +62,6 @@ export function createEditor(container: HTMLElement, darkMode: boolean, language
           color: "var(--text-tertiary)",
         },
       }),
-      ...(darkMode ? [oneDark] : []),
     ],
   });
 
@@ -111,20 +109,6 @@ export function getEditorContent(): string {
   return view.state.doc.toString();
 }
 
-export function setEditorDarkMode(dark: boolean, language = "en"): void {
-  if (!view) return;
-  const pos = view.state.selection.main.head;
-  const content = view.state.doc.toString();
-  const parent = view.dom.parentElement;
-  if (!parent) return;
-  view.destroy();
-  view = createEditor(parent, dark, language);
-  setEditorContent(content);
-  view.dispatch({
-    selection: { anchor: pos, head: pos },
-  });
-}
-
 export function getEditorScrollElement(): HTMLElement | null {
   return view?.scrollDOM ?? null;
 }
@@ -149,6 +133,83 @@ export function insertAtCursor(text: string): void {
   view.dispatch({
     changes: { from, insert: text },
     selection: { anchor: from + text.length },
+  });
+}
+
+export function getSelection(): string {
+  if (!view) return "";
+  const { from, to } = view.state.selection.main;
+  if (from === to) return "";
+  return view.state.doc.sliceString(from, to);
+}
+
+export function replaceSelection(text: string): void {
+  if (!view) return;
+  const { from, to } = view.state.selection.main;
+  view.dispatch({
+    changes: { from, to, insert: text },
+    selection: { anchor: from + text.length },
+  });
+}
+
+export function wrapLines(prefix: string): void {
+  if (!view) return;
+  const { from, to } = view.state.selection.main;
+  if (from === to) {
+    const line = view.state.doc.lineAt(from);
+    view.dispatch({
+      changes: { from: line.from, insert: prefix },
+      selection: { anchor: from + prefix.length },
+    });
+    return;
+  }
+  const text = view.state.doc.sliceString(from, to);
+  const lines = text.split("\n").map((l) => prefix + l).join("\n");
+  view.dispatch({
+    changes: { from, to, insert: lines },
+    selection: { anchor: from, head: from + lines.length },
+  });
+}
+
+export function setHeading(level: number): void {
+  if (!view) return;
+  const { from } = view.state.selection.main;
+  const line = view.state.doc.lineAt(from);
+  const prefix = "#".repeat(level) + " ";
+  const match = line.text.match(/^(#{1,6})\s/);
+  if (match) {
+    const old = match[0];
+    view.dispatch({
+      changes: { from: line.from, to: line.from + old.length, insert: prefix },
+    });
+  } else {
+    view.dispatch({
+      changes: { from: line.from, insert: prefix },
+    });
+  }
+}
+
+export function wrapLink(): void {
+  if (!view) return;
+  const { from, to } = view.state.selection.main;
+  if (from === to) {
+    insertAtCursor("[Link text](url)");
+    return;
+  }
+  const text = view.state.doc.sliceString(from, to);
+  view.dispatch({
+    changes: { from, to, insert: `[${text}](url)` },
+    selection: { anchor: from + 1, head: from + 1 + text.length },
+  });
+}
+
+export function wrapSelection(prefix: string, suffix: string): void {
+  if (!view) return;
+  const { from, to } = view.state.selection.main;
+  const text = view.state.doc.sliceString(from, to);
+  view.dispatch({
+    changes: { from, to, insert: `${prefix}${text}${suffix}` },
+    selection: { anchor: from + prefix.length, head: to + prefix.length },
   });
 }
 

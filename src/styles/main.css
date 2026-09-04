@@ -269,6 +269,50 @@ select.input {
   padding: 24px 32px;
 }
 
+/* === CodeMirror Markdown syntax tokens (theme-reactive via CSS vars, replaces oneDark) === */
+.cm-editor .tok-heading1,
+.cm-editor .tok-heading2,
+.cm-editor .tok-heading3,
+.cm-editor .tok-heading4,
+.cm-editor .tok-heading5,
+.cm-editor .tok-heading6 {
+  font-weight: 650;
+}
+.cm-editor .tok-heading1,
+.cm-editor .tok-heading2 { color: oklch(0.50 0.12 55); }
+.cm-editor .tok-heading3,
+.cm-editor .tok-heading4 { color: oklch(0.55 0.09 60); }
+.cm-editor .tok-heading5,
+.cm-editor .tok-heading6 { color: oklch(0.50 0.05 55); }
+.cm-editor .tok-strong { font-weight: 700; }
+.cm-editor .tok-em { font-style: italic; }
+.cm-editor .tok-strikethrough { color: var(--text-tertiary); text-decoration: line-through; }
+.cm-editor .tok-link,
+.cm-editor .tok-url,
+.cm-editor .tok-autolink,
+.cm-editor .tok-monospace { color: var(--accent); }
+.cm-editor .tok-quote { color: var(--text-secondary); font-style: italic; }
+.cm-editor .tok-comment { color: var(--text-tertiary); font-style: italic; }
+.cm-editor .tok-contentSeparator { color: var(--text-tertiary); }
+.cm-editor .tok-list { color: var(--accent); font-weight: 600; }
+
+/* Dark overrides: brighter headings for readability on dark background */
+.dark .cm-editor .tok-heading1,
+.dark .cm-editor .tok-heading2 { color: oklch(0.68 0.11 60); }
+.dark .cm-editor .tok-heading3,
+.dark .cm-editor .tok-heading4 { color: oklch(0.72 0.08 65); }
+.dark .cm-editor .tok-heading5,
+.dark .cm-editor .tok-heading6 { color: oklch(0.60 0.05 60); }
+
+/* === Spinner (CSS-Animation statt motion-Infinity: kein CPU-Leak bei Wiederholung) === */
+.spinner-rotating {
+  animation: spinner-rotate 0.9s linear infinite;
+  transform-origin: 50% 50%;
+}
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
 .markdown-body {
   font-size: 15px;
   line-height: 1.7;
@@ -297,8 +341,35 @@ select.input {
 .markdown-body a { color: var(--accent); text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
 .markdown-body strong { font-weight: 600; }
-.markdown-body ul, .markdown-body ol { padding-left: 1.5em; margin: 0.8em 0; }
-.markdown-body li { margin: 0.3em 0; }
+.markdown-body ul { 
+  padding-left: 1.5em; 
+  margin: 0.8em 0; 
+  list-style: disc;
+}
+.markdown-body ol { 
+  padding-left: 1.5em; 
+  margin: 0.8em 0; 
+  list-style: decimal;
+}
+.markdown-body li { 
+  margin: 0.4em 0; 
+  position: relative;
+  padding-left: 0.5em;
+}
+.markdown-body ul li::marker {
+  color: var(--accent);
+  font-weight: bold;
+}
+.markdown-body ol li::marker {
+  color: var(--accent);
+  font-weight: bold;
+}
+.markdown-body li:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
 
 .markdown-body blockquote {
   margin: 1em 0;
@@ -378,10 +449,14 @@ select.input {
   display: flex;
   align-items: center;
   justify-content: center;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
 }
 
 #drop-overlay.hidden {
   display: none;
+  pointer-events: none;
 }
 
 #drop-overlay .drop-content {
@@ -395,6 +470,14 @@ select.input {
   background: var(--surface);
   color: var(--accent);
   box-shadow: 0 8px 32px oklch(0 0 0 / 0.15);
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+}
+
+#drop-overlay.hidden .drop-content {
+  transform: scale(0.95) translateY(10px);
+  opacity: 0;
 }
 
 #editor-panel,
@@ -406,16 +489,49 @@ select.input {
 #settings-modal,
 #ollama-dialog,
 #ollama-setup,
-#success-overlay,
-#more-menu {
+#success-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
 }
+
 #settings-modal.hidden,
 #ollama-dialog.hidden,
 #ollama-setup.hidden,
-#success-overlay.hidden,
-#more-menu.hidden {
-  display: none !important;
+#success-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Success-Overlay hart ausblenden: nur display:none garantiert keine klick-blockierende,
+   unsichtbare Fläche (visibility/opacity reichen nicht, wenn ein motion-stale inline bleibt). */
+#success-overlay.hidden {
+  display: none;
+}
+
+/* Content animations for overlays */
+#settings-modal .settings-panel,
+#ollama-dialog .dialog-content,
+#ollama-setup .setup-content,
+#success-overlay .toast-notification {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+}
+
+#settings-modal.hidden .settings-panel,
+#ollama-dialog.hidden .dialog-content,
+#ollama-setup.hidden .setup-content,
+#success-overlay.hidden .toast-notification {
+  transform: scale(0.95) translateY(10px);
+  opacity: 0;
 }
 
 /* === Success Toast === */
@@ -582,27 +698,33 @@ select.input {
 
 /* === Typewriter / Focus Mode === */
 .typewriter-mode .cm-scroller {
-  padding-top: 25vh !important;
-  padding-bottom: 25vh !important;
+  padding-top: 45vh !important;
+  padding-bottom: 45vh !important;
 }
 
 .typewriter-mode .cm-line {
-  opacity: 0.5;
-  transition: opacity 0.25s ease;
+  opacity: 0.4;
+  transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
 .typewriter-mode .cm-activeLine {
   opacity: 1;
+  transform: scale(1.02);
+  background: var(--hover) !important;
 }
 
 #more-menu {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
   background: var(--surface-alpha);
   backdrop-filter: blur(16px);
   border: 1px solid var(--border-alpha);
   box-shadow: 0 12px 32px oklch(0 0 0 / 0.15);
   z-index: 100;
-  flex-direction: column;
   padding: 4px;
+  min-width: 180px;
+  border-radius: 12px;
 }
 #more-menu.hidden {
   display: none;
@@ -691,9 +813,46 @@ select.input {
   word-break: break-word;
 }
 
-/* === Mermaid === */
-.mermaid {
-  margin: 1em 0;
+/* === Context Menu === */
+.context-menu {
+  position: fixed;
+  z-index: 10000;
+  background: var(--surface-alpha);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-alpha);
+  box-shadow: 0 12px 32px oklch(0 0 0 / 0.2);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 160px;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+}
+.context-menu.hidden {
+  display: none;
+}
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.1s ease;
+}
+.context-menu-item:hover {
+  background: var(--hover);
+  color: var(--accent);
+}
+.context-menu-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.context-menu-separator {
+  height: 1px;
+  background: var(--border-alpha);
+  margin: 4px 0;
 }

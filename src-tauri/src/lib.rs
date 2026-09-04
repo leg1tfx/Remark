@@ -92,7 +92,11 @@ fn save_image(path: String, data: Vec<u8>) -> Result<(), String> {
 #[tauri::command]
 async fn check_ollama(endpoint: String) -> Result<bool, String> {
     let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
-    match reqwest::get(&url).await {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Client error: {}", e))?;
+    match client.get(&url).send().await {
         Ok(r) => Ok(r.status().is_success()),
         Err(_) => Ok(false),
     }
@@ -106,12 +110,12 @@ async fn format_with_ollama(
 ) -> Result<String, String> {
     let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
     let prompt = format!(
-        "Turn this into clean Markdown:\n\n{}\n\nOutput only a JSON object with key \"formatted_markdown\".",
+        "Clean up this text:\n\n{}\n\nOutput only a JSON object with key \"formatted_markdown\".",
         text
     );
     let body = serde_json::json!({
         "model": model,
-        "system": "Rewrite the input as Markdown using paragraphs, bullet lists, and headings. Keep every word exactly as written.",
+        "system": "Format the text with paragraph breaks and bullet lists. Preserve every word exactly as written. Only add Markdown syntax (#, -, *) where the text already implies it.",
         "prompt": prompt,
         "stream": false,
         "format": "json",
@@ -142,6 +146,51 @@ async fn format_with_ollama(
         }
     }
     Ok(clean_ollama_output(&raw))
+}
+
+#[tauri::command]
+async fn correct_with_ollama(
+    endpoint: String,
+    model: String,
+    text: String,
+) -> Result<String, String> {
+    let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
+    let prompt = format!(
+        "Correct spelling and grammar:\n\n{}\n\nOutput only a JSON object with key \"corrected\".",
+        text
+    );
+    let body = serde_json::json!({
+        "model": model,
+        "system": "Fix spelling and grammar errors. Preserve every word that is correct. Do not rephrase or rewrite creatively.",
+        "prompt": prompt,
+        "stream": false,
+        "format": "json",
+        "options": { "temperature": 0.05 }
+    });
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("Client error: {}", e))?;
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Ollama error: {}", e))?;
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Response parse error: {}", e))?;
+    let raw = data["response"]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| "Empty response from Ollama".to_string())?;
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) {
+        if let Some(s) = val.get("corrected").and_then(|v| v.as_str()) {
+            return Ok(s.trim().to_string());
+        }
+    }
+    Ok(raw.trim().to_string())
 }
 
 /// Aggressively clean Ollama output: strip code fences and any preamble text.
@@ -325,14 +374,19 @@ async fn check_update(current_version: String) -> Result<Option<String>, String>
 #[tauri::command]
 async fn get_ollama_models(endpoint: String) -> Result<Vec<String>, String> {
     let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
-    let resp = reqwest::get(&url)
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Client error: {}", e))?;
+    let resp = client.get(&url)
+        .send()
         .await
         .map_err(|e| format!("Ollama fetch error: {}", e))?;
-
     let data: serde_json::Value = resp
         .json()
         .await
         .map_err(|e| format!("Ollama parse error: {}", e))?;
+
 
     let models = data["models"]
         .as_array()
@@ -368,6 +422,7 @@ pub fn run(initial_file: Option<String>) {
             save_settings,
             check_ollama,
             format_with_ollama,
+            correct_with_ollama,
             download_ollama,
             install_ollama,
             pull_ollama_model,

@@ -1,9 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
+
+function invokeWithTimeout<T>(cmd: string, args: Record<string, unknown>, timeoutMs = 30000): Promise<T> {
+  return Promise.race([
+    invoke<T>(cmd, args),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${cmd} timed out`)), timeoutMs)),
+  ]);
+}
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { animate as _animate, spring, easeInOut } from "motion";
 const animate = _animate as (...args: any[]) => any;
-import { createEditor, setEditorContent, getEditorContent, setEditorDarkMode, setEditorLanguage, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, suppressChangeEvents, insertAtCursor } from "./editor";
+import { createEditor, setEditorContent, getEditorContent, setEditorLanguage, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, suppressChangeEvents, insertAtCursor, wrapSelection, wrapLines, setHeading, wrapLink, getSelection, replaceSelection } from "./editor";
 import { renderPreviewContent, extractTOC, renderMarkdown } from "./preview";
 import type { AppState, ViewMode, Settings, Tab, FileEntry, LintIssue } from "./types";
 import "./styles/main.css";
@@ -79,6 +86,7 @@ const settingsModal = document.getElementById("settings-modal")!;
 const settingsBackdrop = document.getElementById("settings-backdrop")!;
 const settingsClose = document.getElementById("settings-close")!;
 const ollamaStatus = document.getElementById("ollama-status")!;
+const contextMenu = document.getElementById("context-menu")!;
 
 const ollamaDialog = document.getElementById("ollama-dialog")!;
 const ollamaDialogText = document.getElementById("ollama-dialog-text")!;
@@ -185,11 +193,20 @@ function hideModal(el: HTMLElement, inner: HTMLElement): void {
   }
 }
 
-function animateSpinner(el: SVGElement, loop = true): void {
-  animate(el, { rotate: [0, 360] }, { duration: 1, ease: "linear", repeat: loop ? Infinity : 0 });
+function animateSpinner(el: SVGElement, _loop = true): void {
+  // CSS-Animation statt motion-Infinity: Endloss-Animationen von motion ließen sich
+  // nie stoppen → kumulativer CPU-Leak bei jedem Format-Aufruf.
+  if (!el) return;
+  el.classList.add("spinner-rotating");
 }
 
+// Monoton wachsende Sequenz: veraltete async-showSuccess-Aufrufe dürfen den
+// Toast nicht mehr ein-/ausblenden, wenn ein neuerer Aufruf bereits läuft.
+let successSeq = 0;
+
 function hideSuccessOverlay(): void {
+  successSeq++; // laufende async-Shows invalidieren
+  successOverlay.style.pointerEvents = "none"; // sofort klick-sicher
   try {
     animate(successToast, { opacity: [1, 0], scale: [1, 0.9], y: [0, -20] }, { duration: 0.18, ease: easeInOut });
     animate(successOverlay, { opacity: [1, 0] }, { duration: 0.18, ease: easeInOut });
@@ -198,6 +215,7 @@ function hideSuccessOverlay(): void {
       successOverlay.style.opacity = "";
       successToast.style.opacity = "";
       successToast.style.transform = "";
+      successOverlay.style.pointerEvents = "";
     }, 220);
   } catch {
     successOverlay.classList.add("hidden");
@@ -205,12 +223,14 @@ function hideSuccessOverlay(): void {
 }
 
 async function showSuccessOverlay(msg: string): Promise<void> {
+  const myId = ++successSeq;
   try {
     clearHideTimer(successOverlay);
     successMsgEl.textContent = msg;
     successOverlay.style.opacity = "0";
     successToast.style.opacity = "0";
     successToast.style.transform = "scale(0.85) translateY(30px)";
+    successOverlay.style.pointerEvents = "";
     successOverlay.classList.remove("hidden");
     void successOverlay.offsetHeight;
     successCircle.setAttribute("stroke-dasharray", "176");
@@ -219,15 +239,20 @@ async function showSuccessOverlay(msg: string): Promise<void> {
     successCheck.setAttribute("stroke-dashoffset", "36");
 
     animate(successOverlay, { opacity: [0, 1] }, { duration: 0.25, ease: easeInOut });
-    await animate(successToast, { opacity: [0, 1], scale: [0.85, 1.05, 1], y: [30, -4, 0] }, { duration: 0.55, ease: spring() }).finished;
+    // Ein neuerer Aufruf hat übernommen → diesen sofort ruhigstellen.
+    if (myId !== successSeq) { hideSuccessOverlay(); return; }
+    try { await animate(successToast, { opacity: [0, 1], scale: [0.85, 1.05, 1], y: [30, -4, 0] }, { duration: 0.55, ease: spring() }).finished; } catch { /* überholt */ }
 
-    await animate(successCircle, { strokeDashoffset: [176, 0] }, { duration: 0.35, ease: easeInOut }).finished;
-    await animate(successCheck, { strokeDashoffset: [36, 0] }, { duration: 0.25, ease: easeInOut }).finished;
+    if (myId !== successSeq) { hideSuccessOverlay(); return; }
+    try { await animate(successCircle, { strokeDashoffset: [176, 0] }, { duration: 0.35, ease: easeInOut }).finished; } catch { /* überholt */ }
+    try { await animate(successCheck, { strokeDashoffset: [36, 0] }, { duration: 0.25, ease: easeInOut }).finished; } catch { /* überholt */ }
 
     await new Promise((r) => setTimeout(r, 1000));
-    hideSuccessOverlay();
+    if (myId === successSeq) hideSuccessOverlay();
   } catch {
+    // Auch im Fehlerfall sauber ausblenden (nie hängen lassen / Klicks blockieren).
     successOverlay.classList.add("hidden");
+    successOverlay.style.pointerEvents = "";
   }
 }
 
@@ -245,7 +270,7 @@ function renderTabBar(): void {
     div.dataset.tabId = tab.id;
     div.innerHTML = `
       ${tab.modified ? '<span class="tab-modified"></span>' : ""}
-      <span class="tab-name">${name}</span>
+      <span class="tab-name">${escHtml(name)}</span>
       <span class="tab-close" data-tab-close="${tab.id}">✕</span>
     `;
     div.addEventListener("click", (e) => {
@@ -422,7 +447,7 @@ function bindSettingsUI(): void {
 async function checkOllamaStatus(): Promise<boolean> {
   if (!settings.ollamaEnabled) return false;
   try {
-    return await invoke<boolean>("check_ollama", { endpoint: settings.ollamaEndpoint });
+    return await invokeWithTimeout<boolean>("check_ollama", { endpoint: settings.ollamaEndpoint }, 8000);
   } catch {
     return false;
   }
@@ -469,11 +494,11 @@ async function formatWithOllama(): Promise<void> {
   ollamaDialogSub.classList.remove("hidden");
   ollamaDialogSub.textContent = "Sending to Ollama…";
   try {
-    const result = await invoke<string>("format_with_ollama", {
+    const result = await invokeWithTimeout<string>("format_with_ollama", {
       endpoint: settings.ollamaEndpoint,
       model: settings.ollamaModel,
       text: content,
-    });
+    }, 120000);
     hideModal(ollamaDialog, inner);
     if (tab) {
       tab.content = result;
@@ -490,6 +515,90 @@ async function formatWithOllama(): Promise<void> {
   }
 }
 
+async function formatSelectionWithOllama(sel: string): Promise<void> {
+  if (!settings.ollamaEnabled) {
+    setStatus("Enable AI formatting in settings");
+    return;
+  }
+
+  const running = await checkOllamaStatus();
+  if (!running) {
+    setStatus("Ollama is not running – check settings");
+    return;
+  }
+
+  const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
+  showModal(ollamaDialog, inner);
+  ollamaDialogSub.classList.add("hidden");
+  ollamaDialogText.textContent = "Formatting selection...";
+  ollamaDialogSub.textContent = "";
+  animateSpinner(ollamaSpinnerEl as unknown as SVGSVGElement);
+
+  try {
+    const result = await invokeWithTimeout<string>("format_with_ollama", {
+      endpoint: settings.ollamaEndpoint,
+      model: settings.ollamaModel,
+      text: sel,
+    }, 60000);
+    hideModal(ollamaDialog, inner);
+    replaceSelection(result);
+    const tab = getActiveTab();
+    if (tab) {
+      tab.content = getEditorContent();
+      tab.modified = tab.content !== tab.originalContent;
+    }
+    updatePreview();
+    updateTitle();
+    renderTabBar();
+    showSuccessOverlay("Selection formatted");
+  } catch (err) {
+    hideModal(ollamaDialog, inner);
+    setStatus(`Error: ${err}`);
+  }
+}
+
+async function correctSelectionWithOllama(sel: string): Promise<void> {
+  if (!settings.ollamaEnabled) {
+    setStatus("Enable AI formatting in settings");
+    return;
+  }
+
+  const running = await checkOllamaStatus();
+  if (!running) {
+    setStatus("Ollama is not running – check settings");
+    return;
+  }
+
+  const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
+  showModal(ollamaDialog, inner);
+  ollamaDialogSub.classList.add("hidden");
+  ollamaDialogText.textContent = "Correcting selection...";
+  ollamaDialogSub.textContent = "";
+  animateSpinner(ollamaSpinnerEl as unknown as SVGSVGElement);
+
+  try {
+    const result = await invokeWithTimeout<string>("correct_with_ollama", {
+      endpoint: settings.ollamaEndpoint,
+      model: settings.ollamaModel,
+      text: sel,
+    }, 60000);
+    hideModal(ollamaDialog, inner);
+    replaceSelection(result);
+    const tab = getActiveTab();
+    if (tab) {
+      tab.content = getEditorContent();
+      tab.modified = tab.content !== tab.originalContent;
+    }
+    updatePreview();
+    updateTitle();
+    renderTabBar();
+    showSuccessOverlay("Selection corrected");
+  } catch (err) {
+    hideModal(ollamaDialog, inner);
+    setStatus(`Error: ${err}`);
+  }
+}
+
 // === Ollama Setup Flow ===
 function goToSetupStep(step: number): void {
   for (let i = 1; i <= 4; i++) {
@@ -498,7 +607,11 @@ function goToSetupStep(step: number): void {
   }
   document.getElementById("setup-page-done")!.classList.add("hidden");
   document.getElementById("setup-page-error")!.classList.add("hidden");
-  if (step <= 4) {
+  if (step >= 5) {
+    document.getElementById("setup-page-done")!.classList.remove("hidden");
+    return;
+  }
+  if (step >= 1 && step <= 4) {
     document.getElementById(`setup-page-${step}`)!.classList.remove("hidden");
     document.getElementById(`setup-step-${step}`)!.classList.add("active");
   }
@@ -680,6 +793,17 @@ function updateWordCount(): void {
   wordCountEl.classList.remove("hidden");
 }
 
+// Debounce preview re-render: marked + hljs + mermaid is expensive on every keystroke.
+let previewDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function schedulePreview(delay = 160): void {
+  if (previewDebounceTimer) clearTimeout(previewDebounceTimer);
+  previewDebounceTimer = setTimeout(() => {
+    previewDebounceTimer = null;
+    updatePreview();
+  }, delay);
+}
+
 function onContentChange(content: string): void {
   const tab = getActiveTab();
   if (!tab) return;
@@ -688,7 +812,7 @@ function onContentChange(content: string): void {
   updateTitle();
   renderTabBar();
   if (state.viewMode === "split" || state.viewMode === "view") {
-    updatePreview();
+    schedulePreview();
   }
   updateWordCount();
   runLint();
@@ -732,7 +856,7 @@ function setViewMode(mode: ViewMode): void {
 
   if (mode === "edit" || mode === "split") {
     if (!editorContainer.querySelector(".cm-editor")) {
-      createEditor(editorContainer, state.darkMode, settings.language);
+      createEditor(editorContainer, settings.language);
       const tab = getActiveTab();
       if (tab) setEditorContent(tab.content);
       setupScrollListeners();
@@ -818,7 +942,6 @@ function toggleTheme(): void {
     ? `<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>`
     : `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
   animate(themeIcon, { rotate: [0, 180] }, { duration: 0.3, ease: spring() });
-  setEditorDarkMode(state.darkMode, settings.language);
 }
 
 // === Find / Search ===
@@ -1284,17 +1407,23 @@ document.addEventListener("keydown", (e) => {
 
 // Drag & Drop
 function hideDropOverlay(): void {
+  dropOverlay.style.pointerEvents = "none"; // sofort klick-sicher
   try {
     animate(dropOverlay, { opacity: [1, 0] }, { duration: 0.12, ease: easeInOut });
-    setHideTimer(dropOverlay, () => dropOverlay.classList.add("hidden"), 160);
+    setHideTimer(dropOverlay, () => {
+      dropOverlay.classList.add("hidden");
+      dropOverlay.style.pointerEvents = "";
+    }, 160);
   } catch {
     dropOverlay.classList.add("hidden");
+    dropOverlay.style.pointerEvents = "";
   }
 }
 
 getCurrentWindow().onDragDropEvent(async (event) => {
   if (event.payload.type === "over") {
     clearHideTimer(dropOverlay);
+    dropOverlay.style.pointerEvents = "";
     dropOverlay.classList.remove("hidden");
     animate(dropOverlay, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
     animate(dropContent, { scale: [0.92, 1] }, { duration: 0.2, ease: spring() });
@@ -1363,6 +1492,65 @@ document.addEventListener("mouseup", () => {
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
     saveSettingsFn();
+  }
+});
+
+// === Context Menu ===
+document.addEventListener("contextmenu", (e) => {
+  if (state.viewMode === "view") return;
+  e.preventDefault();
+  contextMenu.style.top = `${e.clientY}px`;
+  contextMenu.style.left = `${e.clientX}px`;
+  contextMenu.classList.remove("hidden");
+});
+
+document.addEventListener("click", (e) => {
+  if (!contextMenu.contains(e.target as Node)) {
+    contextMenu.classList.add("hidden");
+  }
+});
+
+contextMenu.addEventListener("click", async (e) => {
+  const item = (e.target as HTMLElement).closest(".context-menu-item") as HTMLElement | null;
+  if (!item) return;
+  const action = item.dataset.action;
+  contextMenu.classList.add("hidden");
+
+  if (!action) return;
+
+  if (action === "bold") {
+    wrapSelection("**", "**");
+  } else if (action === "italic") {
+    wrapSelection("*", "*");
+  } else if (action === "h1") {
+    setHeading(1);
+  } else if (action === "h2") {
+    setHeading(2);
+  } else if (action === "h3") {
+    setHeading(3);
+  } else if (action === "link") {
+    wrapLink();
+  } else if (action === "code") {
+    const sel = getSelection();
+    if (sel && sel.includes("\n")) {
+      wrapSelection("```\n", "\n```");
+    } else {
+      wrapSelection("`", "`");
+    }
+  } else if (action === "blockquote") {
+    wrapLines("> ");
+  } else if (action === "ul") {
+    wrapLines("- ");
+  } else if (action === "ol") {
+    wrapLines("1. ");
+  } else if (action === "format") {
+    const sel = getSelection();
+    if (!sel) { setStatus("Select text first"); return; }
+    formatSelectionWithOllama(sel);
+  } else if (action === "correct") {
+    const sel = getSelection();
+    if (!sel) { setStatus("Select text first"); return; }
+    correctSelectionWithOllama(sel);
   }
 });
 
@@ -1493,7 +1681,8 @@ function runLint(): void {
 
     // List marker without space
     if (/^(\s*)[-*+]\S/.test(line)) {
-      issues.push({ line: lineNum, column: line.search(/[-*+]/) + 1, message: "Missing space after list marker", rule: "list-marker-space" });
+      const m = line.match(/[-*+]/);
+      issues.push({ line: lineNum, column: (m ? line.indexOf(m[0]) : 0) + 1, message: "Missing space after list marker", rule: "list-marker-space" });
     }
 
     // Long lines
