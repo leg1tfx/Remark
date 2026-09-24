@@ -1,0 +1,33 @@
+name: Release
+
+# Push a tag like v1.1.0 to build the Windows installers and create a draft release.
+# The version in the tag must match src-tauri/tauri.conf.json.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Remark ${{ github.ref_name }}
+          releaseBody: See RELEASE_NOTES.md for details.
+          releaseDraft: true

@@ -2,7 +2,7 @@
 chcp 65001 >nul
 title Remark Installer Build
 
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 
 echo === Remark – Installer wird erstellt ===
 echo.

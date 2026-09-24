@@ -36,13 +36,21 @@ Windows
 - [x] Schönes Dark/Light-Theme mit cremigem Design
 - [x] Drag & Drop `.md`-Dateien ins Fenster
 
+### Version 1.x
+- [x] Scroll-Synchronisation (Split-Ansicht)
+- [x] Math-Unterstützung (KaTeX)
+- [x] Diagramme (Mermaid.js)
+- [x] Multi-Tab mit Session-Wiederherstellung
+- [x] Export zu PDF/HTML
+- [x] Inhaltsverzeichnis, Markdown-Lint, klickbare Task-Listen
+- [x] KI-Formatierung über Ollama (Streaming, Abbrechen)
+- [x] Tests (vitest, cargo test) + CI + Release-Workflow
+
 ### Später (Version 2.0+)
-- [ ] Scroll-Synchronisation
-- [ ] Math-Unterstützung (KaTeX)
-- [ ] Diagramme (Mermaid.js)
 - [ ] Synchronisation
-- [ ] Multi-Tab
-- [ ] Export zu PDF/HTML
+- [ ] Command Palette
+- [ ] Eigenes CSS für die Vorschau
+- [ ] Link-Checker
 
 ## 5. Aufgabenliste
 
