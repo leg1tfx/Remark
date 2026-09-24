@@ -53,7 +53,7 @@
       </header>
 
       <!-- More Menu (dropdown) -->
-      <div id="more-menu" class="hidden fixed z-50 rounded-xl shadow-xl flex-col">
+      <div id="more-menu" class="hidden fixed z-50 rounded-xl shadow-xl flex-col" role="menu">
         <button id="menu-focus" class="more-menu-item">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           Focus Mode
@@ -84,7 +84,7 @@
       <!-- Find Bar -->
       <div id="find-bar" class="hidden flex items-center gap-2 px-3 py-1.5 border-b bg-surface text-sm">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-muted"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="find-input" type="text" placeholder="Search…" class="flex-1 bg-transparent border-none outline-none text-sm px-1" autofocus>
+        <input id="find-input" type="text" placeholder="Search…" class="flex-1 bg-transparent border-none outline-none text-sm px-1" aria-label="Search">
         <span id="find-count" class="text-xs text-muted min-w-[4ch] text-right"></span>
         <button id="find-prev" class="toolbar-btn !px-2" title="Previous">▲</button>
         <button id="find-next" class="toolbar-btn !px-2" title="Next">▼</button>
@@ -171,11 +171,11 @@
       </div>
 
       <!-- Settings Modal -->
-      <div id="settings-modal" class="fixed inset-0 z-50 hidden items-center justify-center">
+      <div id="settings-modal" class="fixed inset-0 z-50 hidden items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
         <div id="settings-backdrop" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
         <div class="settings-panel relative w-full max-w-md mx-4 rounded-xl shadow-xl border overflow-hidden">
           <div class="flex items-center justify-between px-5 py-3 border-b">
-            <h2 class="text-base font-semibold">Settings</h2>
+            <h2 id="settings-title" class="text-base font-semibold">Settings</h2>
             <button id="settings-close" class="modal-close" title="Close">✕</button>
           </div>
           <div class="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
@@ -205,6 +205,13 @@
             </div>
             <hr class="border-t border-border">
             <div>
+              <label class="flex items-center justify-between">
+                <span class="text-sm font-medium">Single line breaks as &lt;br&gt;</span>
+                <input id="setting-line-breaks" type="checkbox" class="toggle">
+              </label>
+              <p class="text-xs text-muted mt-1">Off = standard Markdown (end a line with two spaces for a break).</p>
+            </div>
+            <div>
               <label class="text-xs font-medium text-muted block mb-1">Auto-save interval (ms)</label>
               <input id="setting-autosave" type="number" class="w-full input" placeholder="2000" min="500" step="500">
             </div>
@@ -217,12 +224,12 @@
       </div>
 
       <!-- Ollama Dialog -->
-      <div id="ollama-dialog" class="fixed inset-0 z-40 hidden items-center justify-center">
+      <div id="ollama-dialog" class="fixed inset-0 z-40 hidden items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="ollama-dialog-title" aria-hidden="true">
         <div id="ollama-backdrop" class="absolute inset-0 bg-black/40"></div>
         <div class="settings-panel relative w-full max-w-sm mx-4 rounded-xl shadow-xl border overflow-hidden">
           <div class="flex items-center justify-between px-5 py-3 border-b">
-            <h2 class="text-base font-semibold">AI Formatting</h2>
-            <button id="ollama-close" class="modal-close" title="Close">✕</button>
+            <h2 id="ollama-dialog-title" class="text-base font-semibold">AI Formatting</h2>
+            <button id="ollama-close" class="modal-close" title="Cancel">✕</button>
           </div>
           <div class="p-6 text-center">
             <div class="flex items-center justify-center mb-4">
@@ -233,16 +240,17 @@
             </div>
             <p id="ollama-dialog-text" class="text-sm font-medium">Connecting to AI...</p>
             <p id="ollama-dialog-sub" class="text-xs text-muted mt-1 hidden"></p>
+            <button id="ollama-cancel" class="btn-secondary text-sm px-4 py-1.5 mt-4">Cancel</button>
           </div>
         </div>
       </div>
 
       <!-- Ollama Setup Dialog -->
-      <div id="ollama-setup" class="fixed inset-0 z-45 hidden items-center justify-center">
+      <div id="ollama-setup" class="fixed inset-0 z-45 hidden items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="ollama-setup-title" aria-hidden="true">
         <div id="ollama-setup-backdrop" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
         <div class="settings-panel relative w-full max-w-md mx-4 rounded-xl shadow-xl border overflow-hidden">
           <div class="flex items-center justify-between px-5 py-3 border-b">
-            <h2 class="text-base font-semibold">Set up AI</h2>
+            <h2 id="ollama-setup-title" class="text-base font-semibold">Set up AI</h2>
             <button id="ollama-setup-close" class="modal-close" title="Close">✕</button>
           </div>
           <div class="p-5 space-y-4">
@@ -303,7 +311,10 @@
                 </svg>
               </div>
               <p id="setup-pull-text" class="text-sm font-medium">Pulling AI model…</p>
-              <p class="text-xs text-muted mt-1">This may take a few minutes.</p>
+              <div class="mt-3 w-full bg-border rounded-full h-1.5 overflow-hidden">
+                <div id="setup-pull-bar" class="h-full bg-accent rounded-full transition-all duration-300" style="width:0%"></div>
+              </div>
+              <p id="setup-pull-status" class="text-xs text-muted mt-1">This may take a few minutes.</p>
             </div>
             <div id="setup-page-done" class="hidden text-center py-4">
               <div class="flex items-center justify-center mb-3">
@@ -332,8 +343,7 @@
       </div>
 
       <!-- Success Overlay -->
-      <div id="success-overlay" class="hidden fixed inset-0 z-50 items-center justify-center">
-        <div class="absolute inset-0 bg-black/20 backdrop-blur-sm" id="success-backdrop"></div>
+      <div id="success-overlay" class="hidden" role="status" aria-live="polite">
         <div id="success-toast" class="toast-notification relative rounded-xl border overflow-hidden p-5 flex flex-col items-center gap-3 min-w-[180px]">
           <svg class="w-12 h-12" viewBox="0 0 64 64" fill="none">
             <circle id="success-circle" cx="32" cy="32" r="28" stroke="var(--accent)" stroke-width="4" fill="none"/>
@@ -343,7 +353,7 @@
         </div>
       </div>
 
-      <div id="context-menu" class="context-menu hidden">
+      <div id="context-menu" class="context-menu hidden" role="menu">
         <div class="context-menu-item" data-action="format">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/></svg> Formatieren
         </div>

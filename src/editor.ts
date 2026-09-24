@@ -1,69 +1,97 @@
 import { EditorView, keymap, placeholder, highlightActiveLine } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Compartment } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { searchKeymap, findNext, findPrevious, closeSearchPanel, openSearchPanel } from "@codemirror/search";
 
 let view: EditorView | null = null;
-let suppressChange = false;
 let findController: AbortController | null = null;
+let currentLanguage = "en";
+const languageConf = new Compartment();
+/** Editor state (doc, undo history, selection) per open document, so undo never crosses tabs. */
+const documentStates = new Map<string, EditorState>();
 
-export function suppressChangeEvents(val: boolean): void {
-  suppressChange = val;
+function languageAttributes() {
+  return EditorView.contentAttributes.of({ spellcheck: "true", lang: currentLanguage });
 }
 
 export function setEditorLanguage(lang: string): void {
+  currentLanguage = lang;
+  view?.dispatch({ effects: languageConf.reconfigure(languageAttributes()) });
+}
+
+function buildExtensions() {
+  return [
+    markdown({ codeLanguages: languages }),
+    history(),
+    keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+    placeholder("Start writing..."),
+    EditorView.lineWrapping,
+    languageConf.of(languageAttributes()),
+    highlightActiveLine(),
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        dispatchEvent(new CustomEvent("editor-change", {
+          detail: { content: update.state.doc.toString() },
+        }));
+      }
+    }),
+    EditorView.theme({
+      "&": {
+        backgroundColor: "transparent",
+        color: "var(--text)",
+      },
+      ".cm-content": {
+        caretColor: "var(--accent)",
+      },
+      ".cm-cursor, .cm-dropCursor": {
+        borderLeftColor: "var(--accent)",
+      },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+        backgroundColor: "var(--accent-bg) !important",
+      },
+      ".cm-activeLine": {
+        backgroundColor: "var(--hover)",
+      },
+      ".cm-matchingBracket": {
+        backgroundColor: "var(--accent-bg)",
+        outline: "1px solid var(--accent)",
+      },
+      ".cm-placeholder": {
+        color: "var(--text-tertiary)",
+      },
+    }),
+  ];
+}
+
+/**
+ * Show a document in the editor. Its previous state (undo history, selection) is restored
+ * if it was stashed and the content is unchanged; no change event is fired.
+ */
+export function openDocument(key: string, content: string): void {
   if (!view) return;
-  const cmContent = view.dom.querySelector(".cm-content") as HTMLElement | null;
-  if (cmContent) cmContent.lang = lang;
+  const saved = documentStates.get(key);
+  const next = saved && saved.doc.toString() === content
+    ? saved
+    : EditorState.create({ doc: content, extensions: buildExtensions() });
+  view.setState(next);
+  // A stashed state may carry an older spell-check language.
+  view.dispatch({ effects: languageConf.reconfigure(languageAttributes()) });
+}
+
+/** Remember the current editor state for `key` (call before switching away). */
+export function stashDocument(key: string): void {
+  if (view) documentStates.set(key, view.state);
+}
+
+export function forgetDocument(key: string): void {
+  documentStates.delete(key);
 }
 
 export function createEditor(container: HTMLElement, language = "en"): EditorView {
-  const state = EditorState.create({
-    doc: "",
-    extensions: [
-      markdown({ codeLanguages: languages }),
-      history(),
-      keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
-      placeholder("Start writing..."),
-      EditorView.lineWrapping,
-      EditorView.contentAttributes.of({ spellcheck: "true", lang: language }),
-      highlightActiveLine(),
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged && !suppressChange) {
-          dispatchEvent(new CustomEvent("editor-change", {
-            detail: { content: update.state.doc.toString() },
-          }));
-        }
-      }),
-      EditorView.theme({
-        "&": {
-          backgroundColor: "transparent",
-          color: "var(--text)",
-        },
-        ".cm-content": {
-          caretColor: "var(--accent)",
-        },
-        ".cm-cursor, .cm-dropCursor": {
-          borderLeftColor: "var(--accent)",
-        },
-        "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-          backgroundColor: "var(--accent-bg) !important",
-        },
-        ".cm-activeLine": {
-          backgroundColor: "var(--hover)",
-        },
-        ".cm-matchingBracket": {
-          backgroundColor: "var(--accent-bg)",
-          outline: "1px solid var(--accent)",
-        },
-        ".cm-placeholder": {
-          color: "var(--text-tertiary)",
-        },
-      }),
-    ],
-  });
+  currentLanguage = language;
+  const state = EditorState.create({ doc: "", extensions: buildExtensions() });
 
   view = new EditorView({
     state,
@@ -211,6 +239,26 @@ export function wrapSelection(prefix: string, suffix: string): void {
     changes: { from, to, insert: `${prefix}${text}${suffix}` },
     selection: { anchor: from + prefix.length, head: to + prefix.length },
   });
+}
+
+/** Replace one line (0-based) in a single undoable change, keeping the cursor elsewhere intact. */
+export function replaceLine(index: number, text: string): void {
+  if (!view || index < 0 || index >= view.state.doc.lines) return;
+  const line = view.state.doc.line(index + 1);
+  if (line.text === text) return;
+  view.dispatch({ changes: { from: line.from, to: line.to, insert: text } });
+}
+
+/** Move the cursor to a 1-based line and scroll it into the middle of the view. */
+export function goToLine(lineNumber: number): void {
+  if (!view) return;
+  const n = Math.min(Math.max(1, lineNumber), view.state.doc.lines);
+  const line = view.state.doc.line(n);
+  view.dispatch({
+    selection: { anchor: line.from },
+    effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+  });
+  view.focus();
 }
 
 export function destroyEditor(): void {

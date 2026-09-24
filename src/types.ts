@@ -26,11 +26,15 @@ export interface Settings {
   autoSaveInterval: number;
   recentFiles: string[];
   splitRatio?: number;
-  sessionTabs?: { file: string | null; scrollTop: number }[];
+  /** Open tabs; untitled tabs carry their text in `content`. */
+  sessionTabs?: { file: string | null; scrollTop: number; content?: string }[];
   sessionActiveTab?: number;
   ollamaSetupComplete?: boolean;
   ollamaSetupDismissed?: boolean;
   language?: string;
+  /** Render single line breaks as <br> (GFM "breaks"). */
+  lineBreaks?: boolean;
+  darkMode?: boolean;
 }
 
 export interface FileEntry {

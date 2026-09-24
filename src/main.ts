@@ -1,4 +1,21 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open, save, ask } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { animate as _animate, easeInOut } from "motion";
+import { createEditor, setEditorContent, setEditorLanguage, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, openDocument, stashDocument, forgetDocument, insertAtCursor, wrapSelection, wrapLines, setHeading, wrapLink, getSelection, replaceSelection, replaceLine, goToLine } from "./editor";
+import { renderPreviewContent, buildToc, type RenderOptions } from "./preview";
+import { buildHtmlDocument, renderToHtml, printMarkdown } from "./export";
+import { registerOverlay, showOverlay, hideOverlay, isOverlayOpen, dismissTopOverlay } from "./overlay";
+import { lintMarkdown } from "./lint";
+import { findTaskLines, setTaskChecked } from "./tasks";
+import { escHtml, baseName, dirName, resolvePath, isAbsolutePath, samePath } from "./utils";
+import type { AppState, ViewMode, Settings, Tab, FileEntry, LintIssue } from "./types";
+import "./styles/main.css";
+import "highlight.js/styles/github.css";
+
+const animate = _animate as (...args: any[]) => any;
 
 function invokeWithTimeout<T>(cmd: string, args: Record<string, unknown>, timeoutMs = 30000): Promise<T> {
   return Promise.race([
@@ -6,15 +23,6 @@ function invokeWithTimeout<T>(cmd: string, args: Record<string, unknown>, timeou
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${cmd} timed out`)), timeoutMs)),
   ]);
 }
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { animate as _animate, spring, easeInOut } from "motion";
-const animate = _animate as (...args: any[]) => any;
-import { createEditor, setEditorContent, getEditorContent, setEditorLanguage, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, suppressChangeEvents, insertAtCursor, wrapSelection, wrapLines, setHeading, wrapLink, getSelection, replaceSelection } from "./editor";
-import { renderPreviewContent, extractTOC, renderMarkdown } from "./preview";
-import type { AppState, ViewMode, Settings, Tab, FileEntry, LintIssue } from "./types";
-import "./styles/main.css";
-import "highlight.js/styles/github.css";
 
 // === State ===
 const state: AppState = {
@@ -48,6 +56,7 @@ const defaultSettings: Settings = {
   splitRatio: 0.5,
   ollamaSetupComplete: false,
   language: "en",
+  lineBreaks: false,
 };
 
 let settings: Settings = { ...defaultSettings };
@@ -92,9 +101,9 @@ const ollamaDialog = document.getElementById("ollama-dialog")!;
 const ollamaDialogText = document.getElementById("ollama-dialog-text")!;
 const ollamaDialogSub = document.getElementById("ollama-dialog-sub")!;
 const ollamaSpinnerEl = document.getElementById("ollama-spinner")!;
+const ollamaCancelBtn = document.getElementById("ollama-cancel")!;
 const successOverlay = document.getElementById("success-overlay")!;
 const successToast = document.getElementById("success-toast")!;
-const successBackdrop = document.getElementById("success-backdrop")!;
 
 const ollamaSetup = document.getElementById("ollama-setup")!;
 const ollamaSetupBackdrop = document.getElementById("ollama-setup-backdrop")!;
@@ -108,6 +117,8 @@ const setupProgressBar = document.getElementById("setup-progress-bar")!;
 const setupDownloadText = document.getElementById("setup-download-text")!;
 const setupProgressText = document.getElementById("setup-progress-text")!;
 const setupPullText = document.getElementById("setup-pull-text")!;
+const setupPullBar = document.getElementById("setup-pull-bar")!;
+const setupPullStatus = document.getElementById("setup-pull-status")!;
 const setupErrorText = document.getElementById("setup-error-text")!;
 const setupSpinner1 = document.getElementById("setup-spinner-1")!;
 const setupSpinner2 = document.getElementById("setup-spinner-2")!;
@@ -140,137 +151,62 @@ const sidebarPanelToc = document.getElementById("sidebar-panel-toc")!;
 
 const themeIcon = document.getElementById("theme-icon")!;
 
-// === Animations ===
-function showWithFade(el: HTMLElement, duration = 0.2): void {
-  el.classList.remove("hidden");
-  animate(el, { opacity: [0, 1] }, { duration, ease: easeInOut });
-}
+// === Overlays ===
+// All show/hide logic lives in overlay.ts; here we only declare what each overlay is.
+const settingsPanel = settingsModal.querySelector(".settings-panel") as HTMLElement;
+const ollamaPanel = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
+const setupPanel = ollamaSetup.querySelector(".settings-panel") as HTMLElement;
 
-const hideTimers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
+registerOverlay(settingsModal, { kind: "modal", inner: settingsPanel });
+registerOverlay(ollamaDialog, { kind: "modal", inner: ollamaPanel, onDismiss: () => cancelOllama() });
+registerOverlay(ollamaSetup, { kind: "modal", inner: setupPanel, onDismiss: () => hideOllamaSetup() });
+registerOverlay(successOverlay, { kind: "toast", inner: successToast });
+registerOverlay(moreMenu, { kind: "menu" });
+registerOverlay(contextMenu, { kind: "menu" });
+registerOverlay(lintPanel, { kind: "menu" });
+registerOverlay(findBar, { kind: "bar", onDismiss: () => hideFindBar() });
+registerOverlay(dropOverlay, { kind: "fade", inner: dropContent });
 
-function clearHideTimer(el: HTMLElement): void {
-  const t = hideTimers.get(el);
-  if (t) { clearTimeout(t); hideTimers.delete(el); }
-}
-
-function setHideTimer(el: HTMLElement, fn: () => void, ms: number): void {
-  clearHideTimer(el);
-  hideTimers.set(el, setTimeout(() => { hideTimers.delete(el); fn(); }, ms));
-}
-
-function hideWithFade(el: HTMLElement, duration = 0.15): void {
-  try {
-    animate(el, { opacity: [1, 0] }, { duration, ease: easeInOut });
-    setHideTimer(el, () => el.classList.add("hidden"), (duration * 1000) + 50);
-  } catch {
-    el.classList.add("hidden");
-  }
-}
-
-function showModal(el: HTMLElement, inner: HTMLElement): void {
-  clearHideTimer(el);
-  el.style.opacity = "0";
-  inner.style.opacity = "0";
-  inner.style.transform = "scale(0.88) translateY(30px)";
-  el.classList.remove("hidden");
-  void el.offsetHeight;
-  animate(el, { opacity: [0, 1] }, { duration: 0.25, ease: easeInOut });
-  animate(inner, { opacity: [0, 1], scale: [0.88, 1.02, 1], y: [30, -4, 0] }, { duration: 0.45, ease: spring() });
-}
-
-function hideModal(el: HTMLElement, inner: HTMLElement): void {
-  try {
-    animate(inner, { opacity: [1, 0], scale: [1, 0.93], y: [0, -16] }, { duration: 0.15, ease: easeInOut });
-    animate(el, { opacity: [1, 0] }, { duration: 0.15, ease: easeInOut });
-    setHideTimer(el, () => {
-      el.classList.add("hidden");
-      el.style.opacity = "";
-      inner.style.opacity = "";
-      inner.style.transform = "";
-    }, 200);
-  } catch {
-    el.classList.add("hidden");
-  }
-}
-
-function animateSpinner(el: SVGElement, _loop = true): void {
-  // CSS-Animation statt motion-Infinity: Endloss-Animationen von motion ließen sich
-  // nie stoppen → kumulativer CPU-Leak bei jedem Format-Aufruf.
-  if (!el) return;
+function animateSpinner(el: Element): void {
+  // CSS animation instead of an infinite motion animation (those never stopped → CPU leak).
   el.classList.add("spinner-rotating");
 }
 
-// Monoton wachsende Sequenz: veraltete async-showSuccess-Aufrufe dürfen den
-// Toast nicht mehr ein-/ausblenden, wenn ein neuerer Aufruf bereits läuft.
-let successSeq = 0;
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
-function hideSuccessOverlay(): void {
-  successSeq++; // laufende async-Shows invalidieren
-  successOverlay.style.pointerEvents = "none"; // sofort klick-sicher
-  try {
-    animate(successToast, { opacity: [1, 0], scale: [1, 0.9], y: [0, -20] }, { duration: 0.18, ease: easeInOut });
-    animate(successOverlay, { opacity: [1, 0] }, { duration: 0.18, ease: easeInOut });
-    setHideTimer(successOverlay, () => {
-      successOverlay.classList.add("hidden");
-      successOverlay.style.opacity = "";
-      successToast.style.opacity = "";
-      successToast.style.transform = "";
-      successOverlay.style.pointerEvents = "";
-    }, 220);
-  } catch {
-    successOverlay.classList.add("hidden");
-  }
+/** Non-blocking confirmation toast; a newer call simply restarts it. */
+function showSuccessOverlay(msg: string): void {
+  successMsgEl.textContent = msg;
+  successCircle.setAttribute("stroke-dasharray", "176");
+  successCircle.setAttribute("stroke-dashoffset", "176");
+  successCheck.setAttribute("stroke-dasharray", "36");
+  successCheck.setAttribute("stroke-dashoffset", "36");
+  showOverlay(successOverlay);
+  animate(successCircle, { strokeDashoffset: [176, 0] }, { duration: 0.35, delay: 0.2, ease: easeInOut });
+  animate(successCheck, { strokeDashoffset: [36, 0] }, { duration: 0.25, delay: 0.55, ease: easeInOut });
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => hideOverlay(successOverlay), 1600);
 }
-
-async function showSuccessOverlay(msg: string): Promise<void> {
-  const myId = ++successSeq;
-  try {
-    clearHideTimer(successOverlay);
-    successMsgEl.textContent = msg;
-    successOverlay.style.opacity = "0";
-    successToast.style.opacity = "0";
-    successToast.style.transform = "scale(0.85) translateY(30px)";
-    successOverlay.style.pointerEvents = "";
-    successOverlay.classList.remove("hidden");
-    void successOverlay.offsetHeight;
-    successCircle.setAttribute("stroke-dasharray", "176");
-    successCircle.setAttribute("stroke-dashoffset", "176");
-    successCheck.setAttribute("stroke-dasharray", "36");
-    successCheck.setAttribute("stroke-dashoffset", "36");
-
-    animate(successOverlay, { opacity: [0, 1] }, { duration: 0.25, ease: easeInOut });
-    // Ein neuerer Aufruf hat übernommen → diesen sofort ruhigstellen.
-    if (myId !== successSeq) { hideSuccessOverlay(); return; }
-    try { await animate(successToast, { opacity: [0, 1], scale: [0.85, 1.05, 1], y: [30, -4, 0] }, { duration: 0.55, ease: spring() }).finished; } catch { /* überholt */ }
-
-    if (myId !== successSeq) { hideSuccessOverlay(); return; }
-    try { await animate(successCircle, { strokeDashoffset: [176, 0] }, { duration: 0.35, ease: easeInOut }).finished; } catch { /* überholt */ }
-    try { await animate(successCheck, { strokeDashoffset: [36, 0] }, { duration: 0.25, ease: easeInOut }).finished; } catch { /* überholt */ }
-
-    await new Promise((r) => setTimeout(r, 1000));
-    if (myId === successSeq) hideSuccessOverlay();
-  } catch {
-    // Auch im Fehlerfall sauber ausblenden (nie hängen lassen / Klicks blockieren).
-    successOverlay.classList.add("hidden");
-    successOverlay.style.pointerEvents = "";
-  }
-}
-
-successBackdrop.addEventListener("click", hideSuccessOverlay);
 
 // === Tabs ===
+function tabName(tab: Tab): string {
+  return tab.file ? baseName(tab.file) : "untitled";
+}
+
+function editorReady(): boolean {
+  return !!editorContainer.querySelector(".cm-editor");
+}
+
 function renderTabBar(): void {
   tabList.innerHTML = "";
   state.tabs.forEach((tab) => {
-    const name = tab.file
-      ? tab.file.split("\\").pop()?.split("/").pop() || "untitled"
-      : "untitled";
     const div = document.createElement("div");
     div.className = `tab-item${tab.id === state.activeTabId ? " active" : ""}`;
     div.dataset.tabId = tab.id;
+    div.title = tab.file ?? "untitled";
     div.innerHTML = `
       ${tab.modified ? '<span class="tab-modified"></span>' : ""}
-      <span class="tab-name">${escHtml(name)}</span>
+      <span class="tab-name">${escHtml(tabName(tab))}</span>
       <span class="tab-close" data-tab-close="${tab.id}">✕</span>
     `;
     div.addEventListener("click", (e) => {
@@ -301,49 +237,49 @@ function addTab(file: string | null, content: string = ""): Tab {
   return tab;
 }
 
-function closeTab(id: string): void {
+async function closeTab(id: string): Promise<void> {
   const tab = state.tabs.find((t) => t.id === id);
   if (!tab) return;
   if (tab.modified) {
-    const msg = tab.file
-      ? `"${tab.file.split("\\").pop()?.split("/").pop()}" has unsaved changes. Close anyway?`
-      : "Unsaved changes. Close anyway?";
-    if (!confirm(msg)) return;
+    const ok = await ask(`"${tabName(tab)}" has unsaved changes. Close anyway?`, {
+      title: "Remark",
+      kind: "warning",
+      okLabel: "Close",
+      cancelLabel: "Cancel",
+    });
+    if (!ok) return;
   }
   const idx = state.tabs.indexOf(tab);
+  if (idx < 0) return;
   state.tabs.splice(idx, 1);
-  saveSession();
+  forgetDocument(tab.id);
   if (state.activeTabId === id) {
     const next = state.tabs[Math.min(idx, state.tabs.length - 1)] ?? null;
     setActiveTab(next);
     if (next) {
       loadTab(next);
     } else {
-      setActiveTab(null);
       // Reset UI
-      filenameEl.textContent = "No file open";
-      modifiedDot.classList.add("hidden");
-      statusFilenameBottom.textContent = "";
-      document.title = "Remark";
+      updateTitle();
       statusText.textContent = "Ready";
       wordCountEl.classList.add("hidden");
       emptyState.classList.remove("hidden");
       previewContainer.classList.add("hidden");
       editorPanel.classList.add("hidden");
       previewPanel.classList.remove("hidden");
-      setEditorContent("");
+      openDocument("", "");
+      runLint();
     }
   }
+  saveSession();
   renderTabBar();
 }
 
 function switchTab(id: string): void {
   const old = getActiveTab();
-  if (old) {
+  if (old && editorReady()) {
     old.scrollTop = getEditorScrollTop();
-    if (editorContainer.querySelector(".cm-editor")) {
-      old.content = getEditorContent();
-    }
+    stashDocument(old.id);
   }
   const tab = state.tabs.find((t) => t.id === id);
   if (!tab) return;
@@ -353,30 +289,19 @@ function switchTab(id: string): void {
 }
 
 function loadTab(tab: Tab): void {
-  suppressChangeEvents(true);
-  setEditorContent(tab.content);
-  suppressChangeEvents(false);
-
+  openDocument(tab.id, tab.content);
   setTimeout(() => setEditorScrollTop(tab.scrollTop), 0);
-
-  const name = tab.file
-    ? tab.file.split("\\").pop()?.split("/").pop()
-    : "untitled";
-  filenameEl.textContent = name ?? "untitled";
-  modifiedDot.classList.toggle("hidden", !tab.modified);
-  statusFilenameBottom.textContent = tab.file ?? "";
-  document.title = tab.modified ? `* ${name} - Remark` : `${name} - Remark`;
-
+  updateTitle();
   emptyState.classList.add("hidden");
   previewContainer.classList.remove("hidden");
   updatePreview();
   updateWordCount();
+  runLint();
 }
 
 // === Settings ===
 function openSettings(): void {
-  const panel = settingsModal.querySelector(".settings-panel") as HTMLElement;
-  showModal(settingsModal, panel);
+  showOverlay(settingsModal);
   refreshModelSuggestions();
 }
 
@@ -391,10 +316,15 @@ async function loadSettings(): Promise<void> {
   applySettingsUI();
 }
 
-async function saveSettingsFn(): Promise<void> {
-  try {
-    await invoke("save_settings", { content: JSON.stringify(settings) });
-  } catch {}
+// Writes are chained so an older snapshot can never land after a newer one.
+let settingsWrite: Promise<void> = Promise.resolve();
+
+function saveSettingsFn(): Promise<void> {
+  const content = JSON.stringify(settings);
+  settingsWrite = settingsWrite
+    .then(() => invoke<void>("save_settings", { content }))
+    .catch(() => {});
+  return settingsWrite;
 }
 
 function applySettingsUI(): void {
@@ -402,6 +332,7 @@ function applySettingsUI(): void {
   (document.getElementById("setting-ollama-endpoint") as HTMLInputElement).value = settings.ollamaEndpoint;
   (document.getElementById("setting-ollama-model") as HTMLSelectElement).value = settings.ollamaModel;
   (document.getElementById("setting-autosave") as HTMLInputElement).value = String(settings.autoSaveInterval);
+  (document.getElementById("setting-line-breaks") as HTMLInputElement).checked = !!settings.lineBreaks;
   statusLanguage.value = settings.language || "en";
   updateOllamaStatusBar();
   restartAutoSave();
@@ -415,9 +346,8 @@ function bindSettingsUI(): void {
     if (settings.ollamaEnabled && !settings.ollamaSetupComplete) {
       const running = await checkOllamaStatus();
       if (!running) {
-        const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
-        hideModal(settingsModal, inner);
-        setTimeout(() => showOllamaSetup(), 300);
+        await hideOverlay(settingsModal);
+        showOllamaSetup();
       }
     }
   });
@@ -436,6 +366,11 @@ function bindSettingsUI(): void {
     settings.autoSaveInterval = Math.max(500, parseInt((e.target as HTMLInputElement).value) || 2000);
     saveSettingsFn();
     restartAutoSave();
+  });
+  document.getElementById("setting-line-breaks")!.addEventListener("input", (e) => {
+    settings.lineBreaks = (e.target as HTMLInputElement).checked;
+    saveSettingsFn();
+    updatePreview();
   });
   document.getElementById("clear-recent")!.addEventListener("click", () => {
     settings.recentFiles = [];
@@ -464,142 +399,105 @@ async function updateOllamaStatusBar(): Promise<void> {
 }
 
 // === Ollama Formatting ===
-async function formatWithOllama(): Promise<void> {
+// Every request gets a number; cancelling bumps it, so a result that arrives later is ignored.
+let ollamaRequest = 0;
+let ollamaBusy = false;
+
+function cancelOllama(): void {
+  if (ollamaBusy) {
+    ollamaRequest++;
+    ollamaBusy = false;
+    invoke("cancel_ollama").catch(() => {});
+    setStatus("AI request cancelled");
+  }
+  hideOverlay(ollamaDialog);
+}
+
+listen<{ chars: number }>("ollama-progress", (event) => {
+  if (ollamaBusy) ollamaDialogSub.textContent = `Writing… ${event.payload.chars} characters`;
+});
+
+/** Run a format/correct request with the progress dialog. Resolves to null if it failed or was cancelled. */
+async function runOllama(task: "format" | "correct", text: string, title: string): Promise<string | null> {
   if (!settings.ollamaEnabled) {
     setStatus("Enable AI formatting in settings");
-    return;
+    return null;
   }
-
-  const tab = getActiveTab();
-  const content = tab ? (state.viewMode === "edit" ? getEditorContent() : tab.content) : "";
-  if (!content.trim()) {
+  if (!text.trim()) {
     setStatus("No text to format");
-    return;
+    return null;
   }
-
-  const running = await checkOllamaStatus();
-  if (!running) {
+  if (!(await checkOllamaStatus())) {
     setStatus("Ollama is not running – check settings");
-    return;
+    return null;
   }
 
-  const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
-  showModal(ollamaDialog, inner);
-  ollamaDialogSub.classList.add("hidden");
-  ollamaDialogText.textContent = "Connecting to AI...";
-  ollamaDialogSub.textContent = "";
-  animateSpinner(ollamaSpinnerEl as unknown as SVGSVGElement);
-
-  ollamaDialogText.textContent = "Formatting text...";
+  const myRequest = ++ollamaRequest;
+  ollamaBusy = true;
+  ollamaDialogText.textContent = title;
+  ollamaDialogSub.textContent = "Waiting for the model…";
   ollamaDialogSub.classList.remove("hidden");
-  ollamaDialogSub.textContent = "Sending to Ollama…";
+  animateSpinner(ollamaSpinnerEl);
+  showOverlay(ollamaDialog);
   try {
-    const result = await invokeWithTimeout<string>("format_with_ollama", {
+    const result = await invoke<string>(task === "format" ? "format_with_ollama" : "correct_with_ollama", {
       endpoint: settings.ollamaEndpoint,
       model: settings.ollamaModel,
-      text: content,
-    }, 120000);
-    hideModal(ollamaDialog, inner);
-    if (tab) {
-      tab.content = result;
-      tab.modified = result !== tab.originalContent;
-      setEditorContent(result);
-    }
-    updatePreview();
-    updateTitle();
-    renderTabBar();
-    showSuccessOverlay("Text formatted");
+      text,
+    });
+    return myRequest === ollamaRequest ? result : null;
   } catch (err) {
-    hideModal(ollamaDialog, inner);
-    setStatus(`Error: ${err}`);
+    if (myRequest === ollamaRequest) setStatus(`Error: ${err}`);
+    return null;
+  } finally {
+    if (myRequest === ollamaRequest) {
+      ollamaBusy = false;
+      hideOverlay(ollamaDialog);
+    }
   }
 }
 
-async function formatSelectionWithOllama(sel: string): Promise<void> {
-  if (!settings.ollamaEnabled) {
-    setStatus("Enable AI formatting in settings");
+/** Replace a tab's whole content as one undoable edit. */
+function replaceTabContent(tab: Tab, content: string): void {
+  if (tab === getActiveTab() && editorReady()) {
+    setEditorContent(content); // fires editor-change → onContentChange
     return;
   }
-
-  const running = await checkOllamaStatus();
-  if (!running) {
-    setStatus("Ollama is not running – check settings");
-    return;
-  }
-
-  const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
-  showModal(ollamaDialog, inner);
-  ollamaDialogSub.classList.add("hidden");
-  ollamaDialogText.textContent = "Formatting selection...";
-  ollamaDialogSub.textContent = "";
-  animateSpinner(ollamaSpinnerEl as unknown as SVGSVGElement);
-
-  try {
-    const result = await invokeWithTimeout<string>("format_with_ollama", {
-      endpoint: settings.ollamaEndpoint,
-      model: settings.ollamaModel,
-      text: sel,
-    }, 60000);
-    hideModal(ollamaDialog, inner);
-    replaceSelection(result);
-    const tab = getActiveTab();
-    if (tab) {
-      tab.content = getEditorContent();
-      tab.modified = tab.content !== tab.originalContent;
-    }
+  tab.content = content;
+  tab.modified = content !== tab.originalContent;
+  if (tab === getActiveTab()) {
     updatePreview();
     updateTitle();
-    renderTabBar();
-    showSuccessOverlay("Selection formatted");
-  } catch (err) {
-    hideModal(ollamaDialog, inner);
-    setStatus(`Error: ${err}`);
+    updateWordCount();
+    runLint();
   }
+  renderTabBar();
 }
 
-async function correctSelectionWithOllama(sel: string): Promise<void> {
-  if (!settings.ollamaEnabled) {
-    setStatus("Enable AI formatting in settings");
+async function formatWithOllama(): Promise<void> {
+  const tab = getActiveTab();
+  if (!tab) return;
+  const result = await runOllama("format", tab.content, "Formatting text...");
+  if (result === null) return;
+  replaceTabContent(tab, result);
+  showSuccessOverlay("Text formatted");
+}
+
+async function transformSelectionWithOllama(task: "format" | "correct", sel: string): Promise<void> {
+  const tab = getActiveTab();
+  const result = await runOllama(task, sel, task === "format" ? "Formatting selection..." : "Correcting selection...");
+  if (result === null) return;
+  if (getActiveTab() !== tab || getSelection() !== sel) {
+    setStatus("Selection changed – AI result discarded");
     return;
   }
-
-  const running = await checkOllamaStatus();
-  if (!running) {
-    setStatus("Ollama is not running – check settings");
-    return;
-  }
-
-  const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
-  showModal(ollamaDialog, inner);
-  ollamaDialogSub.classList.add("hidden");
-  ollamaDialogText.textContent = "Correcting selection...";
-  ollamaDialogSub.textContent = "";
-  animateSpinner(ollamaSpinnerEl as unknown as SVGSVGElement);
-
-  try {
-    const result = await invokeWithTimeout<string>("correct_with_ollama", {
-      endpoint: settings.ollamaEndpoint,
-      model: settings.ollamaModel,
-      text: sel,
-    }, 60000);
-    hideModal(ollamaDialog, inner);
-    replaceSelection(result);
-    const tab = getActiveTab();
-    if (tab) {
-      tab.content = getEditorContent();
-      tab.modified = tab.content !== tab.originalContent;
-    }
-    updatePreview();
-    updateTitle();
-    renderTabBar();
-    showSuccessOverlay("Selection corrected");
-  } catch (err) {
-    hideModal(ollamaDialog, inner);
-    setStatus(`Error: ${err}`);
-  }
+  replaceSelection(result);
+  showSuccessOverlay(task === "format" ? "Selection formatted" : "Selection corrected");
 }
 
 // === Ollama Setup Flow ===
+let setupRunning = false;
+
 function goToSetupStep(step: number): void {
   for (let i = 1; i <= 4; i++) {
     document.getElementById(`setup-page-${i}`)!.classList.add("hidden");
@@ -618,20 +516,21 @@ function goToSetupStep(step: number): void {
 }
 
 function showOllamaSetup(): void {
-  const panel = ollamaSetup.querySelector(".settings-panel") as HTMLElement;
-  showModal(ollamaSetup, panel);
-  goToSetupStep(1);
+  // While a setup is running, reopening shows its current progress instead of step 1.
+  if (!setupRunning) goToSetupStep(1);
+  showOverlay(ollamaSetup);
 }
 
 function hideOllamaSetup(): void {
-  const panel = ollamaSetup.querySelector(".settings-panel") as HTMLElement;
-  hideModal(ollamaSetup, panel);
+  hideOverlay(ollamaSetup);
+  if (setupRunning) setStatus("AI setup continues in the background…");
 }
 
 async function waitForOllamaReady(): Promise<void> {
   for (let i = 0; i < 60; i++) {
-    const ok = await checkOllamaStatus();
-    if (ok) return;
+    if (await checkOllamaStatus()) return;
+    // The installer may not start Ollama in silent mode; start it ourselves once.
+    if (i === 4) await invoke("start_ollama").catch(() => {});
     await new Promise((r) => setTimeout(r, 2000));
   }
   throw new Error("Ollama did not start in time");
@@ -640,10 +539,13 @@ async function waitForOllamaReady(): Promise<void> {
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / 1048576).toFixed(1)} MB`;
+  if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
+  return `${(bytes / 1073741824).toFixed(2)} GB`;
 }
 
 async function startOllamaSetup(): Promise<void> {
+  if (setupRunning) return;
+  setupRunning = true;
   const model = setupModelSelect.value;
   settings.ollamaModel = model;
   settings.ollamaEnabled = true;
@@ -654,22 +556,23 @@ async function startOllamaSetup(): Promise<void> {
     setupProgressBar.style.width = "0%";
     setupDownloadText.textContent = "Downloading Ollama…";
     setupProgressText.textContent = "Starting download…";
-    animateSpinner(setupSpinner1 as unknown as SVGSVGElement);
-
-    const path = await invoke<string>("download_ollama");
+    animateSpinner(setupSpinner1);
+    await invoke("download_ollama");
     setupProgressBar.style.width = "100%";
     setupProgressText.textContent = "Download complete";
 
     goToSetupStep(3);
-    animateSpinner(setupSpinner2 as unknown as SVGSVGElement);
-    await invoke("install_ollama", { path });
+    animateSpinner(setupSpinner2);
+    await invoke("install_ollama");
 
     await waitForOllamaReady();
 
     goToSetupStep(4);
     setupPullText.textContent = `Loading ${model}…`;
-    animateSpinner(setupSpinner3 as unknown as SVGSVGElement);
-    await invoke("pull_ollama_model", { model });
+    setupPullBar.style.width = "0%";
+    setupPullStatus.textContent = "This may take a few minutes.";
+    animateSpinner(setupSpinner3);
+    await invoke("pull_ollama_model", { endpoint: settings.ollamaEndpoint, model });
 
     settings.ollamaSetupComplete = true;
     saveSettingsFn();
@@ -678,13 +581,27 @@ async function startOllamaSetup(): Promise<void> {
     setStatus("AI formatting ready");
   } catch (err) {
     showSetupError(`${err}`);
+  } finally {
+    setupRunning = false;
   }
 }
+
+listen<{ status?: string; completed?: number; total?: number }>("ollama-pull-progress", (event) => {
+  const { status, completed, total } = event.payload;
+  if (total && completed !== undefined && completed !== null) {
+    const pct = Math.round((completed / total) * 100);
+    setupPullBar.style.width = `${pct}%`;
+    setupPullStatus.textContent = `${formatBytes(completed)} / ${formatBytes(total)} (${pct}%)`;
+  } else if (status) {
+    setupPullStatus.textContent = status;
+  }
+});
 
 function showSetupError(msg: string): void {
   setupErrorText.textContent = msg;
   goToSetupStep(0);
   document.getElementById("setup-page-error")!.classList.remove("hidden");
+  if (!isOverlayOpen(ollamaSetup)) setStatus(`AI setup failed: ${msg}`);
 }
 
 async function refreshModelSuggestions(): Promise<void> {
@@ -730,12 +647,12 @@ async function checkFirstRunOllama(): Promise<void> {
 }
 
 // === Auto-Save ===
+// Saves every modified tab that has a file, not only the active one.
 function restartAutoSave(): void {
   if (autoSaveTimer) clearInterval(autoSaveTimer);
   autoSaveTimer = setInterval(() => {
-    const tab = getActiveTab();
-    if (tab && tab.modified && tab.file) {
-      saveFile(true);
+    for (const tab of state.tabs) {
+      if (tab.modified && tab.file) saveTab(tab);
     }
   }, settings.autoSaveInterval);
 }
@@ -750,10 +667,8 @@ function updateTitle(): void {
     document.title = "Remark";
     return;
   }
-  const name = tab.file
-    ? tab.file.split("\\").pop()?.split("/").pop()
-    : "untitled";
-  filenameEl.textContent = name ?? "untitled";
+  const name = tabName(tab);
+  filenameEl.textContent = name;
   modifiedDot.classList.toggle("hidden", !tab.modified);
   statusFilenameBottom.textContent = tab.file ?? "";
   document.title = tab.modified ? `* ${name} - Remark` : `${name} - Remark`;
@@ -764,18 +679,38 @@ function setStatus(msg: string): void {
   animate(statusText, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
 }
 
+function renderOptions(tab: Tab | null): RenderOptions {
+  const docDir = tab?.file ? dirName(tab.file) : null;
+  return {
+    breaks: !!settings.lineBreaks,
+    dark: state.darkMode,
+    resolveImage: (src) => {
+      // Local images (e.g. pasted into ./assets) are loaded through Tauri's asset protocol.
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(src) && !/^[a-zA-Z]:[\\/]/.test(src)) return null;
+      let path: string;
+      try { path = decodeURI(src); } catch { path = src; }
+      if (!isAbsolutePath(path)) {
+        if (!docDir) return null;
+        path = resolvePath(docDir, path);
+      }
+      return convertFileSrc(path);
+    },
+  };
+}
+
 function updatePreview(): void {
   const tab = getActiveTab();
   if (!tab) return;
-  const content = state.viewMode === "edit" ? getEditorContent() : tab.content;
-  if (content.trim()) {
+  if (tab.content.trim()) {
     emptyState.classList.add("hidden");
     previewContainer.classList.remove("hidden");
-    renderPreviewContent(previewContainer, content);
+    renderPreviewContent(previewContainer, tab.content, { ...renderOptions(tab), interactive: true });
   } else {
     emptyState.classList.remove("hidden");
     previewContainer.classList.add("hidden");
+    previewContainer.innerHTML = "";
   }
+  updateToc();
 }
 
 function updateWordCount(): void {
@@ -807,15 +742,18 @@ function schedulePreview(delay = 160): void {
 function onContentChange(content: string): void {
   const tab = getActiveTab();
   if (!tab) return;
+  const wasModified = tab.modified;
   tab.content = content;
   tab.modified = content !== tab.originalContent;
   updateTitle();
-  renderTabBar();
+  if (wasModified !== tab.modified) renderTabBar();
   if (state.viewMode === "split" || state.viewMode === "view") {
     schedulePreview();
   }
   updateWordCount();
-  runLint();
+  scheduleLint();
+  // Untitled tabs only live in the session file, so keep it current.
+  if (!tab.file) scheduleSessionSave();
 }
 
 function updateViewModeIcon(): void {
@@ -858,7 +796,10 @@ function setViewMode(mode: ViewMode): void {
     if (!editorContainer.querySelector(".cm-editor")) {
       createEditor(editorContainer, settings.language);
       const tab = getActiveTab();
-      if (tab) setEditorContent(tab.content);
+      if (tab) {
+        openDocument(tab.id, tab.content);
+        setTimeout(() => setEditorScrollTop(tab.scrollTop), 0);
+      }
       setupScrollListeners();
     }
     if (edWasHidden) animate(editorPanel, { opacity: [0, 1] }, { duration: 0.2, ease: easeInOut });
@@ -869,7 +810,14 @@ function setViewMode(mode: ViewMode): void {
   }
 }
 
-async function openFile(path?: string): Promise<void> {
+function rememberRecent(path: string): void {
+  settings.recentFiles = settings.recentFiles.filter((f) => !samePath(f, path));
+  settings.recentFiles.unshift(path);
+  if (settings.recentFiles.length > 10) settings.recentFiles.length = 10;
+  saveSettingsFn();
+}
+
+async function openFile(path?: string, opts: { quiet?: boolean } = {}): Promise<void> {
   let filePath = path;
   if (!filePath) {
     const result = await open({
@@ -880,31 +828,56 @@ async function openFile(path?: string): Promise<void> {
     filePath = result as string;
   }
 
+  // Already open → just switch to it.
+  const existing = state.tabs.find((t) => t.file && samePath(t.file, filePath!));
+  if (existing) {
+    switchTab(existing.id);
+    return;
+  }
+
   setStatus("Opening file...");
   try {
     const content = await invoke<string>("read_file", { path: filePath });
-    const tab = addTab(filePath, content);
-    tab.originalContent = content;
-    tab.modified = false;
-    updatePreview();
-    updateTitle();
-    renderTabBar();
-    await showSuccessOverlay("File opened");
-
-    settings.recentFiles = settings.recentFiles.filter((f) => f !== filePath);
-    settings.recentFiles.unshift(filePath);
-    if (settings.recentFiles.length > 10) settings.recentFiles.length = 10;
-    saveSettingsFn();
-    saveSession();
-
-    // Set sidebar root to file's parent dir
+    addTab(filePath, content);
+    if (!opts.quiet) showSuccessOverlay("File opened");
+    setStatus("Ready");
+    rememberRecent(filePath);
     loadSidebarDir(filePath);
   } catch (err) {
     setStatus(`Error opening: ${err}`);
   }
 }
 
-async function saveFile(silent = false): Promise<void> {
+/**
+ * Write a tab to disk. Content typed while the write is in flight stays marked as modified,
+ * and overlapping saves of the same tab are serialized.
+ */
+const tabSaves = new Map<string, Promise<boolean>>();
+
+function saveTab(tab: Tab): Promise<boolean> {
+  const previous = tabSaves.get(tab.id) ?? Promise.resolve(true);
+  const next = previous.then(async () => {
+    if (!tab.file) return false;
+    const snapshot = tab.content;
+    if (snapshot === tab.originalContent && !tab.modified) return true;
+    try {
+      await invoke("write_file", { path: tab.file, content: snapshot });
+    } catch (err) {
+      setStatus(`Error saving ${tabName(tab)}: ${err}`);
+      return false;
+    }
+    tab.originalContent = snapshot;
+    tab.modified = tab.content !== snapshot;
+    if (tab === getActiveTab()) updateTitle();
+    renderTabBar();
+    return true;
+  });
+  tabSaves.set(tab.id, next);
+  next.finally(() => { if (tabSaves.get(tab.id) === next) tabSaves.delete(tab.id); });
+  return next;
+}
+
+async function saveFile(): Promise<void> {
   const tab = getActiveTab();
   if (!tab) return;
 
@@ -914,25 +887,25 @@ async function saveFile(silent = false): Promise<void> {
       defaultPath: "document.md",
     });
     if (!result) return;
-    tab.file = result as string;
-    settings.recentFiles = settings.recentFiles.filter((f) => f !== result);
-    settings.recentFiles.unshift(result as string);
-    if (settings.recentFiles.length > 10) settings.recentFiles.length = 10;
-    saveSettingsFn();
-    saveSession();
-  }
-  const content = getEditorContent();
-  try {
-    await invoke("write_file", { path: tab.file, content });
-    tab.content = content;
-    tab.originalContent = content;
-    tab.modified = false;
+    tab.file = result;
+    rememberRecent(result);
     updateTitle();
     renderTabBar();
-    if (!silent) await showSuccessOverlay("Saved");
-  } catch (err) {
-    if (!silent) setStatus(`Error saving: ${err}`);
   }
+  tab.modified = true; // force a write even if nothing changed (explicit Ctrl+S)
+  if (await saveTab(tab)) {
+    saveSession();
+    showSuccessOverlay("Saved");
+  }
+}
+
+/** Save every modified tab that has a file. Returns the tabs that could not be saved. */
+async function saveAllTabs(): Promise<Tab[]> {
+  const failed: Tab[] = [];
+  for (const tab of state.tabs) {
+    if (tab.modified && tab.file && !(await saveTab(tab))) failed.push(tab);
+  }
+  return failed;
 }
 
 function toggleTheme(): void {
@@ -941,26 +914,26 @@ function toggleTheme(): void {
   themeIcon.innerHTML = state.darkMode
     ? `<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>`
     : `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
-  animate(themeIcon, { rotate: [0, 180] }, { duration: 0.3, ease: spring() });
+  animate(themeIcon, { rotate: [0, 180] }, { type: "spring", bounce: 0.35, duration: 0.4 });
+  if (settings.darkMode !== state.darkMode) {
+    settings.darkMode = state.darkMode;
+    saveSettingsFn();
+  }
+  // Mermaid diagrams pick their theme at render time.
+  if (previewContainer.querySelector(".mermaid")) updatePreview();
 }
 
 // === Find / Search ===
 function showFindBar(): void {
-  clearHideTimer(findBar);
-  findBar.classList.remove("hidden");
-  animate(findBar, { height: ["0px", "36px"], opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
+  showOverlay(findBar);
   findInput.focus();
   findInput.select();
   findInEditor(findInput.value);
+  updateFindCount();
 }
 
 function hideFindBar(): void {
-  try {
-    animate(findBar, { opacity: [1, 0] }, { duration: 0.1, ease: easeInOut });
-    setHideTimer(findBar, () => findBar.classList.add("hidden"), 150);
-  } catch {
-    findBar.classList.add("hidden");
-  }
+  hideOverlay(findBar);
   findInEditor("");
 }
 
@@ -975,8 +948,7 @@ function findPrev(): void { findInEditor(findInput.value, "prev"); }
 function updateFindCount(): void {
   const q = findInput.value;
   if (!q) { findCount.textContent = ""; return; }
-  const tab = getActiveTab();
-  const content = tab ? (state.viewMode === "edit" ? getEditorContent() : tab.content) : "";
+  const content = getActiveTab()?.content ?? "";
   const matches = content.toLowerCase().split(q.toLowerCase()).length - 1;
   findCount.textContent = `${matches} hits`;
 }
@@ -998,9 +970,7 @@ let expandedDirs = new Set<string>();
 let sidebarRoot: string | null = null;
 
 async function loadSidebarDir(filePath: string): Promise<void> {
-  const parts = filePath.replace(/\\/g, "/").split("/");
-  parts.pop();
-  const dir = parts.join("/");
+  const dir = dirName(filePath);
   if (!dir) return;
   sidebarRoot = dir;
   await refreshSidebarTree();
@@ -1014,21 +984,20 @@ async function refreshSidebarTree(): Promise<void> {
   if (!sidebarRoot) return;
   try {
     const entries = await invoke<FileEntry[]>("list_directory", { path: sidebarRoot });
-    sidebarFiles.innerHTML = renderTree(entries, sidebarRoot, 0);
-    attachTreeListeners(sidebarFiles);
+    sidebarFiles.innerHTML = renderTree(entries, 0);
   } catch {}
 }
 
-function renderTree(entries: FileEntry[], basePath: string, depth: number): string {
+function renderTree(entries: FileEntry[], depth: number): string {
   let html = "";
-  const filtered = entries.filter((e) => e.is_dir || e.name.endsWith(".md") || e.name.endsWith(".markdown") || e.name.endsWith(".txt"));
+  const filtered = entries.filter((e) => e.is_dir || /\.(md|markdown|txt)$/i.test(e.name));
   for (const entry of filtered) {
     const isExpanded = expandedDirs.has(entry.path);
     const indent = depth * 16;
     const name = escHtml(entry.name);
     const path = escHtml(entry.path);
     if (entry.is_dir) {
-      html += `<div class="file-item ${isExpanded ? "dir-open" : ""}" data-path="${path}" data-dir="1" style="padding-left:${6 + indent}px">
+      html += `<div class="file-item ${isExpanded ? "dir-open" : ""}" data-path="${path}" data-dir="1" data-depth="${depth}" style="padding-left:${6 + indent}px">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         <span>${name}</span>
@@ -1043,45 +1012,42 @@ function renderTree(entries: FileEntry[], basePath: string, depth: number): stri
   return html;
 }
 
-async function toggleDir(el: Element, path: string): Promise<void> {
-  const childContainer = sidebarFiles.querySelector(`.file-children[data-parent="${path}"]`);
-  const needsCreate = !childContainer;
-  if (needsCreate || childContainer!.classList.contains("hidden")) {
+async function toggleDir(el: HTMLElement): Promise<void> {
+  const path = el.dataset.path!;
+  // The children container sits right after its folder row (no selector lookup: Windows
+  // paths contain backslashes, which break attribute selectors).
+  const next = el.nextElementSibling as HTMLElement | null;
+  const childContainer = next?.classList.contains("file-children") ? next : null;
+  if (!childContainer || childContainer.classList.contains("hidden")) {
     expandedDirs.add(path);
     el.classList.add("dir-open");
-    if (needsCreate) {
+    if (!childContainer) {
       const div = document.createElement("div");
       div.className = "file-children";
-      div.dataset.parent = path;
       el.after(div);
       try {
         const entries = await invoke<FileEntry[]>("list_directory", { path });
-        div.innerHTML = renderTree(entries, path, 1);
-        attachTreeListeners(div as HTMLElement);
+        div.innerHTML = renderTree(entries, Number(el.dataset.depth ?? 0) + 1);
       } catch {
         div.textContent = "error";
       }
     } else {
-      childContainer!.classList.remove("hidden");
+      childContainer.classList.remove("hidden");
     }
   } else {
     expandedDirs.delete(path);
     el.classList.remove("dir-open");
-    childContainer!.classList.add("hidden");
+    childContainer.classList.add("hidden");
   }
 }
 
-function attachTreeListeners(container: HTMLElement): void {
-  container.querySelectorAll(".file-item[data-dir]").forEach((el) => {
-    el.addEventListener("click", () => toggleDir(el, (el as HTMLElement).dataset.path!));
-  });
-  container.querySelectorAll(".file-item:not([data-dir])").forEach((el) => {
-    el.addEventListener("click", () => {
-      const path = (el as HTMLElement).dataset.path!;
-      openFile(path);
-    });
-  });
-}
+// One delegated listener instead of re-binding on every render.
+sidebarFiles.addEventListener("click", (e) => {
+  const item = (e.target as HTMLElement).closest<HTMLElement>(".file-item");
+  if (!item) return;
+  if (item.dataset.dir) toggleDir(item);
+  else openFile(item.dataset.path!);
+});
 
 function updateSidebarVisibility(): void {
   sidebar.classList.toggle("hidden", !state.sidebarOpen);
@@ -1097,128 +1063,139 @@ function switchSidebarPanel(panel: "files" | "toc"): void {
   sidebarToc.classList.toggle("hidden", panel !== "toc");
 }
 
-// === TOC Update ===
-addEventListener("toc-update", ((e: CustomEvent) => {
-  const container = e.detail.container as HTMLElement;
-  const tocHtml = extractTOC(container);
-  sidebarToc.innerHTML = tocHtml || '<p class="text-xs text-muted p-2">No headings found</p>';
-  // Click handler for TOC links
-  sidebarToc.querySelectorAll(".toc-link").forEach((a) => {
-    a.addEventListener("click", (e) => {
-      e.preventDefault();
-      const href = (a as HTMLAnchorElement).getAttribute("href");
-      if (href) {
-        const target = previewContainer.querySelector(href);
-        if (target) target.scrollIntoView({ behavior: "smooth" });
-      }
-    });
-  });
-}) as EventListener);
+// === TOC ===
+function updateToc(): void {
+  const toc = buildToc(previewContainer);
+  if (toc) {
+    sidebarToc.replaceChildren(toc);
+  } else {
+    sidebarToc.innerHTML = '<p class="text-xs text-muted p-2">No headings found</p>';
+  }
+}
+
+function scrollPreviewToHeading(id: string): void {
+  const target = document.getElementById(id);
+  if (target && previewContainer.contains(target)) target.scrollIntoView({ behavior: "smooth" });
+}
+
+sidebarToc.addEventListener("click", (e) => {
+  const link = (e.target as HTMLElement).closest<HTMLElement>(".toc-link");
+  if (!link) return;
+  e.preventDefault();
+  if (state.viewMode === "edit") setViewMode("split");
+  scrollPreviewToHeading(link.dataset.target!);
+});
+
+// === Links in the preview ===
+// External links open in the browser; the app window itself must never navigate away.
+previewContainer.addEventListener("click", (e) => {
+  const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
+  if (!a) return;
+  e.preventDefault();
+  const href = a.getAttribute("href")!;
+  if (href.startsWith("#")) {
+    let id = href.slice(1);
+    try { id = decodeURIComponent(id); } catch { /* keep raw */ }
+    scrollPreviewToHeading(id);
+  } else if (/^(https?:|mailto:)/i.test(href)) {
+    openUrl(href).catch((err) => setStatus(`Could not open link: ${err}`));
+  } else if (/\.(md|markdown|txt)(#.*)?$/i.test(href)) {
+    const tab = getActiveTab();
+    const file = href.replace(/#.*$/, "");
+    let path: string;
+    try { path = decodeURI(file); } catch { path = file; }
+    if (!isAbsolutePath(path)) {
+      if (!tab?.file) { setStatus("Save the file first to follow relative links"); return; }
+      path = resolvePath(dirName(tab.file), path);
+    }
+    openFile(path);
+  }
+});
+
+// Task list checkboxes: toggle the matching line in the source.
+previewContainer.addEventListener("change", (e) => {
+  const cb = e.target as HTMLInputElement;
+  if (cb.type !== "checkbox" || cb.dataset.taskIndex === undefined) return;
+  const tab = getActiveTab();
+  if (!tab) return;
+  const lineIdx = findTaskLines(tab.content)[Number(cb.dataset.taskIndex)];
+  if (lineIdx === undefined) return;
+  const lines = tab.content.split("\n");
+  const updated = setTaskChecked(lines[lineIdx], cb.checked);
+  if (editorReady()) {
+    replaceLine(lineIdx, updated); // fires editor-change → onContentChange
+  } else {
+    lines[lineIdx] = updated;
+    replaceTabContent(tab, lines.join("\n"));
+  }
+});
 
 // === Focus / Typewriter Mode ===
 function toggleTypewriter(): void {
   state.typewriterMode = !state.typewriterMode;
-  document.getElementById("editor-container")!.classList.toggle("typewriter-mode", state.typewriterMode);
+  editorContainer.classList.toggle("typewriter-mode", state.typewriterMode);
   menuFocus.classList.toggle("active", state.typewriterMode);
   setStatus(state.typewriterMode ? "Focus mode on" : "Focus mode off");
 }
 
 // === Export ===
-function getFullHTMLPage(): string {
-  const tab = getActiveTab();
-  if (!tab) return "";
-  // We need to render markdown to HTML, but we need to bypass the container-based rendering
-  // Import renderMarkdown directly
-  const bodyHtml = renderMarkdown(tab.content);
-
-  const isDark = state.darkMode;
-  const bg = isDark ? "#1e1e1e" : "#f5f0eb";
-  const text = isDark ? "#e8e4dd" : "#3d352c";
-  const accent = "#c4845a";
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>${tab.file?.split("\\").pop()?.split("/").pop() || "document"}</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github.min.css">
-<style>
-body { max-width: 800px; margin: 0 auto; padding: 40px 32px; background: ${bg}; color: ${text}; font-size: 15px; line-height: 1.7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-img { max-width: 100%; border-radius: 8px; }
-pre { background: ${isDark ? "#2a2a2a" : "#f0ece6"}; padding: 16px; border-radius: 8px; overflow-x: auto; }
-code { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.9em; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 0.6em 1em; border: 1px solid ${isDark ? "#3a3a3a" : "#ddd"}; text-align: left; }
-blockquote { border-left: 4px solid ${accent}; padding: 0.5em 1em; margin: 1em 0; background: ${isDark ? "#2a2a2a" : "#f0ece6"}; border-radius: 0 8px 8px 0; }
-a { color: ${accent}; }
-</style>
-</head><body>${bodyHtml}</body></html>`;
-}
-
 async function exportHTML(): Promise<void> {
   const tab = getActiveTab();
   if (!tab) { setStatus("No file to export"); return; }
+  const stem = tab.file ? baseName(tab.file).replace(/\.[^.]+$/, "") : "document";
   const result = await save({
     filters: [{ name: "HTML", extensions: ["html"] }],
-    defaultPath: "document.html",
+    defaultPath: `${stem}.html`,
   });
   if (!result) return;
   try {
-    await invoke("write_file", { path: result, content: getFullHTMLPage() });
-    await showSuccessOverlay("HTML exported");
+    // Exported files cannot use the app's asset protocol, so keep image paths as written.
+    const body = await renderToHtml(tab.content, { ...renderOptions(tab), resolveImage: undefined });
+    const html = buildHtmlDocument(tabName(tab), body, state.darkMode);
+    await invoke("write_file", { path: result, content: html });
+    showSuccessOverlay("HTML exported");
   } catch (err) {
     setStatus(`Export error: ${err}`);
   }
 }
 
-function exportPDF(): void {
-  const html = getFullHTMLPage();
-  if (!html) { setStatus("No file to export"); return; }
-  const win = window.open("", "_blank");
-  if (!win) { setStatus("Popup blocked. Allow popups for PDF export."); return; }
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  const poll = () => {
-    if (win.document.body && win.document.body.innerHTML.length > 100) {
-      win.print();
-    } else {
-      requestAnimationFrame(poll);
-    }
-  };
-  poll();
+async function exportPDF(): Promise<void> {
+  const tab = getActiveTab();
+  if (!tab || !tab.content.trim()) { setStatus("No file to export"); return; }
+  try {
+    await printMarkdown(tab.content, renderOptions(tab));
+  } catch (err) {
+    setStatus(`Print error: ${err}`);
+  }
 }
 
 // === Image Paste ===
+const IMAGE_EXTS: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
 async function handleImagePaste(e: ClipboardEvent): Promise<void> {
+  const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image/"));
+  if (!item) return; // normal text paste
   const tab = getActiveTab();
   if (!tab) { setStatus("Open a file first to paste images"); return; }
+  e.preventDefault();
   if (!tab.file) { setStatus("Save the file first to paste images"); return; }
-  const items = e.clipboardData?.items;
-  if (!items) return;
-  for (const item of items) {
-    if (item.type.startsWith("image/")) {
-      e.preventDefault();
-      const file = item.getAsFile();
-      if (!file) continue;
-      const buffer = await file.arrayBuffer();
-      const data = new Uint8Array(buffer);
-
-      const dir = tab.file.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
-      const assetsDir = dir + "/assets";
-      const ext = item.type === "image/png" ? "png" : item.type === "image/jpeg" ? "jpg" : "png";
-      const name = `pasted-${Date.now()}.${ext}`;
-      const savePath = `${assetsDir}/${name}`;
-
-      try {
-        await invoke("create_dir", { path: assetsDir });
-        await invoke("save_image", { path: savePath, data: Array.from(data) });
-        insertAtCursor(`![Pasted image](assets/${name})`);
-        setStatus("Image pasted");
-      } catch (err) {
-        setStatus(`Image paste error: ${err}`);
-      }
-      return;
-    }
+  const file = item.getAsFile();
+  if (!file) return;
+  const data = new Uint8Array(await file.arrayBuffer());
+  const ext = IMAGE_EXTS[item.type] ?? "png";
+  const name = `pasted-${Date.now()}.${ext}`;
+  const savePath = `${dirName(tab.file)}/assets/${name}`;
+  try {
+    await invoke("save_image", { path: savePath, data: Array.from(data) });
+    insertAtCursor(`![Pasted image](assets/${name})`);
+    setStatus("Image pasted");
+  } catch (err) {
+    setStatus(`Image paste error: ${err}`);
   }
 }
 
@@ -1237,9 +1214,6 @@ btnSidebar.addEventListener("click", () => {
 btnNewTab.addEventListener("click", () => {
   addTab(null, "");
   setViewMode("edit");
-  setEditorContent("");
-  updateTitle();
-  renderTabBar();
   setStatus("New tab");
 });
 
@@ -1256,52 +1230,44 @@ btnViewMode.addEventListener("click", (e) => {
   }
 });
 
-let moreMenuVisible = false;
-let moreMenuTimer: ReturnType<typeof setTimeout> | undefined;
-
-function showMoreMenu(): void {
-  if (moreMenuTimer) { clearTimeout(moreMenuTimer); moreMenuTimer = undefined; }
-  moreMenuVisible = true;
-  moreMenu.classList.remove("hidden");
-  moreMenu.style.opacity = "";
-  moreMenu.style.transform = "";
-  animate(moreMenu, { opacity: [0, 1], scale: [0.93, 1], y: [-10, 0] }, { duration: 0.2, ease: easeInOut });
-}
-function hideMoreMenu(): void {
-  if (!moreMenuVisible) return;
-  moreMenuVisible = false;
-  if (moreMenuTimer) { clearTimeout(moreMenuTimer); }
-  animate(moreMenu, { opacity: [1, 0], scale: [1, 0.95], y: [0, -6] }, { duration: 0.12, ease: easeInOut });
-  moreMenuTimer = setTimeout(() => {
-    moreMenu.classList.add("hidden");
-    moreMenuTimer = undefined;
-  }, 150);
+/** Place a fixed-position popup at (x, y), kept inside the window. */
+function placePopup(el: HTMLElement, x: number, y: number): void {
+  el.style.left = "0px";
+  el.style.top = "0px";
+  el.classList.remove("hidden"); // measure
+  const { width, height } = el.getBoundingClientRect();
+  const left = Math.max(8, Math.min(x, window.innerWidth - width - 8));
+  const top = y + height > window.innerHeight - 8 ? Math.max(8, y - height) : y;
+  el.style.left = `${left}px`;
+  el.style.top = `${top}px`;
 }
 
 btnMore.addEventListener("click", (e) => {
   e.stopPropagation();
-  if (moreMenuVisible) { hideMoreMenu(); return; }
-  const btn = (e.target as HTMLElement).closest("button");
-  if (!btn) return;
-  const rect = btn.getBoundingClientRect();
-  const menuW = 200;
-  const gap = 4;
-  const vw = window.innerWidth;
-  const clampedLeft = Math.max(8, Math.min(rect.left, vw - menuW - 8));
-  moreMenu.style.top = `${rect.bottom + gap}px`;
-  moreMenu.style.left = `${clampedLeft}px`;
-  showMoreMenu();
+  if (isOverlayOpen(moreMenu)) { hideOverlay(moreMenu); return; }
+  const rect = btnMore.getBoundingClientRect();
+  placePopup(moreMenu, rect.left, rect.bottom + 4);
+  showOverlay(moreMenu);
 });
 
-menuFocus.addEventListener("click", (e) => { e.stopPropagation(); hideMoreMenu(); toggleTypewriter(); });
-menuOllama.addEventListener("click", (e) => { e.stopPropagation(); hideMoreMenu(); formatWithOllama(); });
-menuExportHtml.addEventListener("click", (e) => { e.stopPropagation(); hideMoreMenu(); exportHTML(); });
-menuExportPdf.addEventListener("click", (e) => { e.stopPropagation(); hideMoreMenu(); exportPDF(); });
+function runMenuAction(fn: () => void) {
+  return (e: Event) => {
+    e.stopPropagation();
+    hideOverlay(moreMenu);
+    fn();
+  };
+}
+menuFocus.addEventListener("click", runMenuAction(toggleTypewriter));
+menuOllama.addEventListener("click", runMenuAction(formatWithOllama));
+menuExportHtml.addEventListener("click", runMenuAction(exportHTML));
+menuExportPdf.addEventListener("click", runMenuAction(exportPDF));
 
+// Click outside closes popups.
 document.addEventListener("click", (e) => {
-  if (!moreMenu.contains(e.target as Node) && e.target !== btnMore && !(e.target as HTMLElement).closest("#btn-more")) {
-    hideMoreMenu();
-  }
+  const target = e.target as HTMLElement;
+  if (!moreMenu.contains(target) && !target.closest("#btn-more")) hideOverlay(moreMenu);
+  if (!contextMenu.contains(target)) hideOverlay(contextMenu);
+  if (!lintPanel.contains(target) && !target.closest("#btn-lint")) hideOverlay(lintPanel);
 });
 
 findCloseBtn.addEventListener("click", hideFindBar);
@@ -1309,34 +1275,20 @@ findNextBtn.addEventListener("click", findNext);
 findPrevBtn.addEventListener("click", findPrev);
 findInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.shiftKey ? findPrev() : findNext(); }
-  if (e.key === "Escape") hideFindBar();
 });
 findInput.addEventListener("input", () => { findInEditor(findInput.value); updateFindCount(); });
 
-settingsBackdrop.addEventListener("click", () => {
-  const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
-  hideModal(settingsModal, inner);
-});
-settingsClose.addEventListener("click", () => {
-  const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
-  hideModal(settingsModal, inner);
-});
+settingsBackdrop.addEventListener("click", () => hideOverlay(settingsModal));
+settingsClose.addEventListener("click", () => hideOverlay(settingsModal));
 
-ollamaDialog.addEventListener("click", (e) => {
-  if (e.target === ollamaDialog || (e.target as HTMLElement).id === "ollama-backdrop") {
-    const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
-    hideModal(ollamaDialog, inner);
-  }
-});
-document.getElementById("ollama-close")!.addEventListener("click", () => {
-  const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
-  hideModal(ollamaDialog, inner);
-});
+document.getElementById("ollama-backdrop")!.addEventListener("click", cancelOllama);
+document.getElementById("ollama-close")!.addEventListener("click", cancelOllama);
+ollamaCancelBtn.addEventListener("click", cancelOllama);
 
 ollamaSetupBackdrop.addEventListener("click", hideOllamaSetup);
 ollamaSetupClose.addEventListener("click", hideOllamaSetup);
 setupSkip.addEventListener("click", () => {
-  // "Later" klicken = Dialog beim nächsten Start nicht erneut automatisch öffnen.
+  // "Later" = do not open the dialog automatically on the next start.
   settings.ollamaSetupDismissed = true;
   saveSettingsFn();
   hideOllamaSetup();
@@ -1346,26 +1298,22 @@ setupStart.addEventListener("click", startOllamaSetup);
 setupFinish.addEventListener("click", hideOllamaSetup);
 
 // Download progress
-import { listen } from "@tauri-apps/api/event";
 listen<{ downloaded: number; total: number }>("ollama-download-progress", (event) => {
   const { downloaded, total } = event.payload;
   const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
-  if (!setupProgressBar.classList.contains("hidden")) {
-    setupProgressBar.style.width = `${pct}%`;
-    setupDownloadText.textContent = `Downloading Ollama installer… (${formatBytes(downloaded)} / ${formatBytes(total)})`;
-    setupProgressText.textContent = `${pct}%`;
-  }
+  setupProgressBar.style.width = `${pct}%`;
+  setupDownloadText.textContent = total > 0
+    ? `Downloading Ollama installer… (${formatBytes(downloaded)} / ${formatBytes(total)})`
+    : `Downloading Ollama installer… (${formatBytes(downloaded)})`;
+  setupProgressText.textContent = total > 0 ? `${pct}%` : "";
 });
 
 document.getElementById("btn-settings")!.addEventListener("click", openSettings);
 
-document.getElementById("setting-install-ollama")?.addEventListener("click", () => {
-  const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
-  hideModal(settingsModal, inner);
-  setTimeout(() => showOllamaSetup(), 300);
+document.getElementById("setting-install-ollama")!.addEventListener("click", async () => {
+  await hideOverlay(settingsModal);
+  showOllamaSetup();
 });
-
-// Also wire download overlay to the direct download from settings (optional future use)
 
 // Sidebar panel switching
 sidebarPanelFiles.addEventListener("click", () => switchSidebarPanel("files"));
@@ -1374,29 +1322,26 @@ sidebarPanelToc.addEventListener("click", () => switchSidebarPanel("toc"));
 // Keyboard shortcuts
 document.addEventListener("keydown", (e) => {
   const ctrl = e.ctrlKey || e.metaKey;
-  if (ctrl && e.key === "o") { e.preventDefault(); openFile(); }
-  if (ctrl && e.key === "s") { e.preventDefault(); saveFile(); }
-  if (ctrl && e.shiftKey && e.key === "V") { e.preventDefault(); setViewMode("view"); }
-  if (ctrl && e.key === "e") { e.preventDefault(); setViewMode("edit"); }
-  if (ctrl && e.shiftKey && e.key === "E") { e.preventDefault(); setViewMode("split"); }
-  if (e.key === "Escape" && moreMenuVisible) { hideMoreMenu(); }
-  if (ctrl && e.key === "f") { e.preventDefault(); showFindBar(); }
-  if (ctrl && e.key === "n") { e.preventDefault(); btnNewTab.click(); }
-  if (ctrl && e.shiftKey && e.key === "b") { e.preventDefault(); btnSidebar.click(); }
-  if (e.key === "F3") { e.preventDefault(); findNext(); }
-  if (e.key === "Escape" && !findBar.classList.contains("hidden")) hideFindBar();
-  if (e.key === "Escape" && !settingsModal.classList.contains("hidden")) {
-    const inner = settingsModal.querySelector(".settings-panel") as HTMLElement;
-    hideModal(settingsModal, inner);
+  const key = e.key.toLowerCase();
+
+  // Escape closes only the topmost overlay (dialog, menu, find bar …).
+  if (e.key === "Escape") {
+    if (dismissTopOverlay()) e.preventDefault();
+    return;
   }
-  if (e.key === "Escape" && !ollamaDialog.classList.contains("hidden")) {
-    const inner = ollamaDialog.querySelector(".settings-panel") as HTMLElement;
-    hideModal(ollamaDialog, inner);
-  }
-  if (e.key === "Escape" && !successOverlay.classList.contains("hidden")) { hideSuccessOverlay(); }
-  if (e.key === "Escape" && !ollamaSetup.classList.contains("hidden")) {
-    hideOllamaSetup();
-  }
+  // While a dialog is open, app shortcuts must not act on the document behind it.
+  if (isOverlayOpen(settingsModal) || isOverlayOpen(ollamaDialog) || isOverlayOpen(ollamaSetup)) return;
+
+  if (ctrl && !e.shiftKey && key === "o") { e.preventDefault(); openFile(); }
+  if (ctrl && !e.shiftKey && key === "s") { e.preventDefault(); saveFile(); }
+  if (ctrl && e.shiftKey && key === "v") { e.preventDefault(); setViewMode("view"); }
+  if (ctrl && !e.shiftKey && key === "e") { e.preventDefault(); setViewMode("edit"); }
+  if (ctrl && e.shiftKey && key === "e") { e.preventDefault(); setViewMode("split"); }
+  if (ctrl && !e.shiftKey && key === "f") { e.preventDefault(); showFindBar(); }
+  if (ctrl && !e.shiftKey && key === "n") { e.preventDefault(); btnNewTab.click(); }
+  if (ctrl && !e.shiftKey && key === "w") { e.preventDefault(); if (state.activeTabId) closeTab(state.activeTabId); }
+  if (ctrl && e.shiftKey && key === "b") { e.preventDefault(); btnSidebar.click(); }
+  if (e.key === "F3") { e.preventDefault(); e.shiftKey ? findPrev() : findNext(); }
 
   // Tab switching with Ctrl+Tab / Ctrl+Shift+Tab
   if (ctrl && e.key === "Tab") {
@@ -1411,38 +1356,19 @@ document.addEventListener("keydown", (e) => {
 });
 
 // Drag & Drop
-function hideDropOverlay(): void {
-  dropOverlay.style.pointerEvents = "none"; // sofort klick-sicher
-  try {
-    animate(dropOverlay, { opacity: [1, 0] }, { duration: 0.12, ease: easeInOut });
-    setHideTimer(dropOverlay, () => {
-      dropOverlay.classList.add("hidden");
-      dropOverlay.style.pointerEvents = "";
-    }, 160);
-  } catch {
-    dropOverlay.classList.add("hidden");
-    dropOverlay.style.pointerEvents = "";
-  }
-}
-
 getCurrentWindow().onDragDropEvent(async (event) => {
-  if (event.payload.type === "over") {
-    clearHideTimer(dropOverlay);
-    dropOverlay.style.pointerEvents = "";
-    dropOverlay.classList.remove("hidden");
-    animate(dropOverlay, { opacity: [0, 1] }, { duration: 0.15, ease: easeInOut });
-    animate(dropContent, { scale: [0.92, 1] }, { duration: 0.2, ease: spring() });
+  if (event.payload.type === "enter" || event.payload.type === "over") {
+    if (!isOverlayOpen(dropOverlay)) showOverlay(dropOverlay);
   } else if (event.payload.type === "leave") {
-    hideDropOverlay();
+    hideOverlay(dropOverlay);
   } else if (event.payload.type === "drop") {
-    hideDropOverlay();
-    const path = event.payload.paths[0];
-    if (!path) return;
-    if (!path.endsWith(".md") && !path.endsWith(".markdown") && !path.endsWith(".txt")) {
+    hideOverlay(dropOverlay);
+    const paths = event.payload.paths.filter((p) => /\.(md|markdown|txt)$/i.test(p));
+    if (!paths.length) {
       setStatus("Only .md, .markdown or .txt files");
       return;
     }
-    await openFile(path);
+    for (const path of paths) await openFile(path);
   }
 });
 
@@ -1504,22 +1430,15 @@ document.addEventListener("mouseup", () => {
 document.addEventListener("contextmenu", (e) => {
   if (state.viewMode === "view") return;
   e.preventDefault();
-  contextMenu.style.top = `${e.clientY}px`;
-  contextMenu.style.left = `${e.clientX}px`;
-  contextMenu.classList.remove("hidden");
-});
-
-document.addEventListener("click", (e) => {
-  if (!contextMenu.contains(e.target as Node)) {
-    contextMenu.classList.add("hidden");
-  }
+  placePopup(contextMenu, e.clientX, e.clientY);
+  showOverlay(contextMenu);
 });
 
 contextMenu.addEventListener("click", async (e) => {
   const item = (e.target as HTMLElement).closest(".context-menu-item") as HTMLElement | null;
   if (!item) return;
   const action = item.dataset.action;
-  contextMenu.classList.add("hidden");
+  hideOverlay(contextMenu);
 
   if (!action) return;
 
@@ -1551,210 +1470,150 @@ contextMenu.addEventListener("click", async (e) => {
   } else if (action === "format") {
     const sel = getSelection();
     if (!sel) { setStatus("Select text first"); return; }
-    formatSelectionWithOllama(sel);
+    transformSelectionWithOllama("format", sel);
   } else if (action === "correct") {
     const sel = getSelection();
     if (!sel) { setStatus("Select text first"); return; }
-    correctSelectionWithOllama(sel);
+    transformSelectionWithOllama("correct", sel);
   }
 });
 
 // === Session Restore ===
+let restoringSession = false;
+let sessionSaveTimer: ReturnType<typeof setTimeout> | undefined;
+
 function saveSession(): void {
-  settings.sessionTabs = state.tabs.map((t) => ({
-    file: t.file,
-    scrollTop: t.file ? getEditorScrollTop() : 0,
-  }));
-  settings.sessionActiveTab = state.activeTabId
-    ? state.tabs.findIndex((t) => t.id === state.activeTabId)
-    : 0;
+  if (restoringSession) return;
+  clearTimeout(sessionSaveTimer);
+  const active = getActiveTab();
+  if (active && editorReady()) active.scrollTop = getEditorScrollTop();
+  settings.sessionTabs = state.tabs.map((t) => t.file
+    ? { file: t.file, scrollTop: t.scrollTop }
+    // Untitled tabs have no file, so their text is kept in the session itself.
+    : { file: null, scrollTop: t.scrollTop, content: t.content });
+  settings.sessionActiveTab = Math.max(0, state.tabs.findIndex((t) => t.id === state.activeTabId));
   saveSettingsFn();
 }
 
-async function restoreSession(): Promise<void> {
-  const st = settings.sessionTabs;
-  if (!st || st.length === 0) return;
-  let restoredCount = 0;
-  for (const s of st) {
-    if (!s.file) {
-      addTab(null, "");
-      restoredCount++;
-      continue;
-    }
-    try {
-      const exists = await invoke<boolean>("file_exists", { path: s.file });
-      if (exists) {
-        const content = await invoke<string>("read_file", { path: s.file });
-        const tab = addTab(s.file, content);
-        tab.originalContent = content;
-        tab.modified = false;
-        restoredCount++;
-      }
-    } catch {}
-  }
-  // Restore active tab
-  const idx = settings.sessionActiveTab ?? 0;
-  if (state.tabs[idx]) switchTab(state.tabs[idx].id);
-  setStatus(`Restored ${restoredCount} tab(s)`);
+function scheduleSessionSave(): void {
+  clearTimeout(sessionSaveTimer);
+  sessionSaveTimer = setTimeout(saveSession, 1000);
 }
 
-// === Task List Handler ===
-addEventListener("task-list-rendered", ((e: CustomEvent) => {
-  const container = e.detail.container as HTMLElement;
-  const sourceContent = e.detail.content as string;
-  container.querySelectorAll<HTMLInputElement>("li.task-list-item input[type=checkbox]").forEach((cb) => {
-    cb.disabled = false;
-    cb.addEventListener("change", () => {
-      const items = container.querySelectorAll("li.task-list-item input[type=checkbox]");
-      let idx = 0;
-      for (const item of items) {
-        if (item === cb) break;
-        idx++;
-      }
-      // Find Nth task list item in source and toggle
-      const tab = getActiveTab();
-      if (!tab) return;
-      const lines = tab.content.split("\n");
-      let found = 0;
-      for (let i = 0; i < lines.length; i++) {
-        if (/^\s*[-*]\s+\[[ x]\]/i.test(lines[i])) {
-          if (found === idx) {
-            lines[i] = cb.checked
-              ? lines[i].replace(/\[ \]/, "[x]")
-              : lines[i].replace(/\[x\]/i, "[ ]");
-            tab.content = lines.join("\n");
-            tab.modified = tab.content !== tab.originalContent;
-            setEditorContent(tab.content);
-            updatePreview();
-            updateTitle();
-            renderTabBar();
-            updateWordCount();
-            break;
-          }
-          found++;
+async function restoreSession(): Promise<void> {
+  const saved = settings.sessionTabs;
+  if (!saved || saved.length === 0) return;
+  restoringSession = true;
+  const restored: (Tab | null)[] = [];
+  try {
+    for (const s of saved) {
+      let tab: Tab | null = null;
+      if (!s.file) {
+        if (s.content) {
+          tab = addTab(null, s.content);
+          tab.originalContent = "";
+          tab.modified = true;
         }
+      } else {
+        try {
+          if (await invoke<boolean>("file_exists", { path: s.file })) {
+            const content = await invoke<string>("read_file", { path: s.file });
+            tab = addTab(s.file, content);
+          }
+        } catch { /* skip unreadable files */ }
       }
+      restored.push(tab);
+    }
+  } finally {
+    restoringSession = false;
+  }
+  restored.forEach((tab, i) => { if (tab) tab.scrollTop = saved[i].scrollTop ?? 0; });
+  const active = restored[settings.sessionActiveTab ?? 0] ?? restored.find(Boolean);
+  if (active) switchTab(active.id);
+  renderTabBar();
+  const count = restored.filter(Boolean).length;
+  if (count) setStatus(`Restored ${count} tab(s)`);
+}
+
+// === Close protection ===
+let closeConfirmed = false;
+
+getCurrentWindow().onCloseRequested(async (event) => {
+  if (closeConfirmed) return;
+  const failed = await saveAllTabs();
+  saveSession(); // also persists the text of untitled tabs
+  await settingsWrite;
+  if (failed.length) {
+    const names = failed.map(tabName).join(", ");
+    const ok = await ask(`Could not save ${names}. Close anyway and lose these changes?`, {
+      title: "Remark",
+      kind: "warning",
+      okLabel: "Close",
+      cancelLabel: "Cancel",
     });
-  });
-}) as EventListener);
+    if (!ok) {
+      event.preventDefault();
+      return;
+    }
+  }
+  closeConfirmed = true;
+});
 
 // === Auto-Updater ===
 async function checkForUpdate(): Promise<void> {
   try {
-    const latest = await invoke<string | null>("check_update", { currentVersion: "1.0.0" });
+    const latest = await invoke<string | null>("check_update");
     if (latest) {
       btnUpdate.classList.remove("hidden");
-      btnUpdate.addEventListener("click", () => {
-        window.open("https://github.com/leg1tfx/Remark/releases/latest", "_blank");
-      });
+      btnUpdate.title = `Remark ${latest} is available`;
     }
   } catch {}
 }
 
+btnUpdate.addEventListener("click", () => {
+  openUrl("https://github.com/leg1tfx/Remark/releases/latest").catch((err) => setStatus(`Could not open link: ${err}`));
+});
+
 // === Markdown Lint ===
-let currentIssues: LintIssue[] = [];
+let lintTimer: ReturnType<typeof setTimeout> | undefined;
+
+function scheduleLint(): void {
+  clearTimeout(lintTimer);
+  lintTimer = setTimeout(runLint, 300);
+}
 
 function runLint(): void {
   const tab = getActiveTab();
-  if (!tab || !tab.content.trim()) {
+  const issues: LintIssue[] = tab ? lintMarkdown(tab.content) : [];
+  if (!issues.length) {
     btnLint.classList.add("hidden");
-    lintPanel.classList.add("hidden");
-    currentIssues = [];
+    hideOverlay(lintPanel);
     return;
   }
-  const issues: LintIssue[] = [];
-  const lines = tab.content.split("\n");
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const lineNum = i + 1;
-
-    // Trailing whitespace
-    if (/[ \t]+$/.test(line) && line.length > 0) {
-      issues.push({ line: lineNum, column: line.length, message: "Trailing whitespace", rule: "trailing-space" });
-    }
-
-    // Multiple consecutive blank lines (check next line too)
-    if (i > 0 && line === "" && lines[i - 1] === "") {
-      issues.push({ line: lineNum, column: 1, message: "Consecutive blank lines", rule: "consecutive-blank-lines" });
-    }
-
-    // Heading without space after #
-    if (/^#{1,6}[^#\s]/.test(line) && !/^#{1,6}\s/.test(line)) {
-      issues.push({ line: lineNum, column: 1, message: "Missing space after heading marker", rule: "heading-space" });
-    }
-
-    // List marker without space
-    if (/^(\s*)[-*+]\S/.test(line)) {
-      const m = line.match(/[-*+]/);
-      issues.push({ line: lineNum, column: (m ? line.indexOf(m[0]) : 0) + 1, message: "Missing space after list marker", rule: "list-marker-space" });
-    }
-
-    // Long lines
-    if (line.length > 120 && !/^```/.test(line)) {
-      issues.push({ line: lineNum, column: 121, message: `Line too long (${line.length} chars)`, rule: "line-length" });
-    }
-  }
-
-  // No trailing newline
-  if (tab.content.length > 0 && !tab.content.endsWith("\n")) {
-    issues.push({ line: lines.length, column: lines[lines.length - 1].length, message: "No trailing newline", rule: "final-newline" });
-  }
-
-  currentIssues = issues;
-  if (issues.length > 0) {
-    lintCount.textContent = String(issues.length);
-    btnLint.classList.remove("hidden");
-    lintPanel.innerHTML = issues.map((iss) =>
-      `<div class="lint-item" data-line="${iss.line}">
-        <span class="lint-line">${iss.line}:${iss.column}</span>
-        <span class="lint-msg">${escHtml(iss.message)}</span>
-      </div>`
-    ).join("");
-    lintPanel.querySelectorAll(".lint-item").forEach((el) => {
-      el.addEventListener("click", () => {
-        const line = parseInt((el as HTMLElement).dataset.line!);
-        scrollEditorToLine(line);
-        lintPanel.classList.add("hidden");
-      });
-    });
-  } else {
-    btnLint.classList.add("hidden");
-    lintPanel.classList.add("hidden");
-  }
+  lintCount.textContent = String(issues.length);
+  btnLint.classList.remove("hidden");
+  lintPanel.innerHTML = issues.map((iss) =>
+    `<div class="lint-item" data-line="${iss.line}">
+      <span class="lint-line">${iss.line}:${iss.column}</span>
+      <span class="lint-msg">${escHtml(iss.message)}</span>
+    </div>`
+  ).join("");
 }
 
-function escHtml(s: string): string {
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
-}
-
-function scrollEditorToLine(line: number): void {
+lintPanel.addEventListener("click", (e) => {
+  const item = (e.target as HTMLElement).closest<HTMLElement>(".lint-item");
+  if (!item) return;
   if (state.viewMode === "view") setViewMode("split");
-  const el = getEditorScrollElement();
-  if (!el) return;
-  const cm = el.querySelector(".cm-content");
-  if (!cm) return;
-  const lineEl = (cm.querySelectorAll(".cm-line")[line - 1] || null) as HTMLElement | null;
-  if (lineEl) {
-    lineEl.scrollIntoView({ behavior: "smooth", block: "center" });
-    lineEl.style.outline = "2px solid var(--accent)";
-    setTimeout(() => { lineEl.style.outline = ""; }, 2000);
-  }
-}
-
-btnLint.addEventListener("click", (e) => {
-  lintPanel.classList.toggle("hidden");
-  const rect = btnLint.getBoundingClientRect();
-  lintPanel.style.bottom = "28px";
-  lintPanel.style.left = `${rect.left}px`;
+  goToLine(Number(item.dataset.line));
+  hideOverlay(lintPanel);
 });
 
-document.addEventListener("click", (e) => {
-  if (e.target !== btnLint && !lintPanel.contains(e.target as Node)) {
-    lintPanel.classList.add("hidden");
-  }
+btnLint.addEventListener("click", () => {
+  if (isOverlayOpen(lintPanel)) { hideOverlay(lintPanel); return; }
+  const rect = btnLint.getBoundingClientRect();
+  lintPanel.style.bottom = "28px";
+  lintPanel.style.left = `${Math.max(4, rect.left)}px`;
+  showOverlay(lintPanel);
 });
 
 // === Language ===
@@ -1768,29 +1627,22 @@ statusLanguage.addEventListener("change", () => {
 async function init(): Promise<void> {
   await loadSettings();
   bindSettingsUI();
+  if (settings.darkMode) toggleTheme();
 
-  try {
-    const initialFile = await invoke<string | null>("get_initial_file");
-    if (initialFile) {
-      await openFile(initialFile);
-    }
-  } catch {}
-
-  document.documentElement.classList.toggle("dark", state.darkMode);
   setViewMode("view");
   updateTitle();
   setStatus("Ready");
 
-  // Restore session if available
+  // Restore the last session first, then open the file the app was launched with
+  // (openFile switches to it if the session already contains it).
   await restoreSession();
+  try {
+    const initialFile = await invoke<string | null>("get_initial_file");
+    if (initialFile) await openFile(initialFile, { quiet: true });
+  } catch {}
 
-  // If still no tabs, add a default empty one
-  if (state.tabs.length === 0) {
-    addTab(null, "");
-    setEditorContent("");
-    updateTitle();
-    renderTabBar();
-  }
+  if (state.tabs.length === 0) addTab(null, "");
+  saveSession();
 
   await checkFirstRunOllama();
 
@@ -1800,13 +1652,8 @@ async function init(): Promise<void> {
   }
   pollOllama();
 
-  // Init resizer
   initResizer();
-
-  // Check for updates
   checkForUpdate();
-
-  // Run initial lint
   runLint();
 }
 
