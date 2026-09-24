@@ -1,9 +1,13 @@
 {
   "identifier": "default",
   "description": "Default capabilities for Remark",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
-    "dialog:default"
+    "core:window:allow-destroy",
+    "dialog:default",
+    "opener:default"
   ]
 }
