@@ -1,6 +1,6 @@
 [package]
 name = "remark"
-version = "1.0.0"
+version = "1.1.0"
 description = "Lightweight native Markdown editor with live preview and AI formatting"
 authors = ["remark"]
 edition = "2021"

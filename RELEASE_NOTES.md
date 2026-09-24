@@ -1,3 +1,40 @@
+# Remark v1.1.0
+
+## Highlights
+
+- **AI formatting that cannot change your words.** The model now only decides what each
+  line is (heading, list item, quote, paragraph); Remark adds the Markdown itself.
+  Existing Markdown and code blocks are left alone, and the result is one undo step.
+- **No more lost work.** Modified files are saved before the window closes, untitled tabs
+  are kept in the session, and auto-save covers every open tab.
+- **Reliable dialogs and menus.** Overlays no longer get stuck half-visible, the "Saved"
+  toast no longer blocks the window, and Escape closes only the topmost dialog.
+
+## Fixes
+
+- AI formatting no longer drops the first paragraph
+- AI requests show progress and can be cancelled
+- Opening a file by double-click no longer duplicates a tab or wipes the last session
+- Undo stays within its tab
+- Task list checkboxes in the preview can be ticked
+- Headings with umlauts get working anchors and table of contents links
+- Pasted images show in the preview
+- Links open in the browser instead of replacing the app window
+- `$5 and $10` is no longer rendered as math
+- Sidebar folders collapse again on Windows
+- Lint entries jump to the right line
+- HTML export includes code highlighting; PDF export prints without a popup
+- The dark theme is remembered
+
+## Changes
+
+- Single line breaks follow standard Markdown by default; the old behaviour can be
+  switched on in Settings ("Single line breaks as <br>")
+- AI setup verifies the Ollama installer's signature and pulls models with a progress bar
+- Update notification uses proper version comparison
+
+---
+
 # Remark v1.0.0
 
 A lightweight native Markdown editor with live preview and local AI formatting.

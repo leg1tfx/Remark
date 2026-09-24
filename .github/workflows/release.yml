@@ -29,5 +29,5 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Remark ${{ github.ref_name }}
-          releaseBody: See RELEASE_NOTES.md for details.
+          releaseBody: See [RELEASE_NOTES.md](https://github.com/leg1tfx/Remark/blob/master/RELEASE_NOTES.md) for what changed.
           releaseDraft: true
