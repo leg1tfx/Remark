@@ -43,7 +43,7 @@ Windows
 - [x] Multi-Tab mit Session-Wiederherstellung
 - [x] Export zu PDF/HTML
 - [x] Inhaltsverzeichnis, Markdown-Lint, klickbare Task-Listen
-- [x] KI-Formatierung über Ollama (Streaming, Abbrechen)
+- [x] KI-Formatierung über Ollama: Zeilen klassifizieren statt Text umschreiben (Abbrechen, Undo)
 - [x] Tests (vitest, cargo test) + CI + Release-Workflow
 
 ### Später (Version 2.0+)

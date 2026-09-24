@@ -50,9 +50,10 @@ builds the Windows installers and creates a draft GitHub release.
 | `src/preview.ts` | Markdown rendering, heading ids, task lists, TOC |
 | `src/editor.ts` | CodeMirror setup, per-tab editor state |
 | `src/export.ts` | HTML export and printing (PDF) |
+| `src/structure.ts` | AI formatting: applies line labels as Markdown (unit tested) |
 | `src/lint.ts`, `src/tasks.ts`, `src/utils.ts` | Pure helpers (unit tested) |
 | `src-tauri/src/lib.rs` | Tauri commands: files, settings, Ollama, updates |
-| `src-tauri/src/ollama_text.rs` | Cleaning up model output (unit tested) |
+| `src-tauri/src/ollama_text.rs` | Parsing model output: labels, corrected text (unit tested) |
 
 ## Tech Stack
 
@@ -74,7 +75,16 @@ Remark can format text as Markdown through a local Ollama model.
 2. Pick a model (recommended: `llama3.2:3b`)
 3. Write text and choose **Format with AI** (or right-click a selection)
 
-Output streams in with a live character count and can be cancelled at any time.
+**How formatting works – classify, don't rewrite.** The model never writes your text.
+It only decides for each plain line whether it is a heading, a list item, a quote or a
+normal paragraph (the answer is restricted to these labels by a JSON schema). Remark then
+adds the Markdown itself (`src/structure.ts`), so no word can be changed, dropped or
+invented. Existing Markdown and code blocks are left alone, obvious cases like `•` bullets
+or `(1)` numbering are converted without AI, and headings that read like full sentences
+are kept as paragraphs.
+
+*Correct spelling* (right-click a selection) is the only feature where the model writes
+text; it streams with a live character count. All AI requests can be cancelled.
 If Ollama is missing, a setup wizard downloads the installer (checked for a valid
 Windows signature before it runs), installs it and pulls the model.
 

@@ -281,7 +281,7 @@ struct GenerateProgress {
     chars: usize,
 }
 
-/// Stream a generate request, emitting progress, and return the extracted field.
+/// Stream a generate request constrained to `schema`, emitting progress, and return the raw output.
 async fn ollama_generate(
     app: &tauri::AppHandle,
     state: &AppState,
@@ -289,16 +289,11 @@ async fn ollama_generate(
     model: &str,
     system: &str,
     prompt: String,
-    key: &str,
+    schema: serde_json::Value,
 ) -> Result<String, String> {
     let generation = state.ollama_generation.fetch_add(1, Ordering::SeqCst) + 1;
     let cancel = Some((&state.ollama_generation, generation));
     let url = ollama_url(endpoint, "/api/generate");
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": { key: { "type": "string" } },
-        "required": [key],
-    });
 
     let send = |format: serde_json::Value| {
         let body = serde_json::json!({
@@ -358,35 +353,71 @@ async fn ollama_generate(
         handle(v, &mut out)?;
     }
 
-    let result = ollama_text::extract_field(&out, key);
-    if result.trim().is_empty() {
+    if out.trim().is_empty() {
         return Err("Empty response from Ollama".to_string());
     }
-    Ok(result)
+    Ok(out)
 }
 
+/// Longest document excerpt sent along as context for line classification.
+const CLASSIFY_CONTEXT_CHARS: usize = 6000;
+
+/// Decide the Markdown block type of each line. The model only picks labels from a fixed
+/// set (enforced by a JSON schema); the frontend applies the syntax, so the user's words
+/// can never be changed.
 #[tauri::command]
-async fn format_with_ollama(
+async fn classify_lines(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     endpoint: String,
     model: String,
-    text: String,
-) -> Result<String, String> {
+    context: String,
+    lines: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let n = lines.len();
+    if n == 0 {
+        return Ok(Vec::new());
+    }
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "labels": {
+                "type": "array",
+                "items": { "type": "string", "enum": ollama_text::LABELS },
+                "minItems": n,
+                "maxItems": n,
+            }
+        },
+        "required": ["labels"],
+    });
+    let context: String = context.chars().take(CLASSIFY_CONTEXT_CHARS).collect();
+    let numbered = lines
+        .iter()
+        .enumerate()
+        .map(|(i, l)| format!("{}. {}", i + 1, l.trim()))
+        .collect::<Vec<_>>()
+        .join("\n");
     let prompt = format!(
-        "Clean up this text:\n\n{}\n\nOutput only a JSON object with key \"formatted_markdown\".",
-        text
+        "Document (for context):\n\"\"\"\n{}\n\"\"\"\n\nClassify each of these {} lines from the document. \
+         Answer with a JSON object {{\"labels\": [...]}} containing exactly {} labels, one per line, in the same order.\n\n{}",
+        context, n, n, numbered
     );
-    ollama_generate(
+    let raw = ollama_generate(
         &app,
         &state,
         &endpoint,
         &model,
-        "Format the text with paragraph breaks and bullet lists. Preserve every word exactly as written. Only add Markdown syntax (#, -, *) where the text already implies it.",
+        "You decide the Markdown structure of plain text lines. Labels: \
+         heading1 = title of the whole document, heading2 = section heading, heading3 = sub-section heading, \
+         bullet = item in an unordered list, numbered = step or item in an ordered sequence, \
+         quote = quoted text, paragraph = normal sentence or text. \
+         Short title-like lines without final punctuation are usually headings. \
+         Several short parallel lines in a row are usually list items. When unsure, answer paragraph.",
         prompt,
-        "formatted_markdown",
+        schema,
     )
-    .await
+    .await?;
+    ollama_text::parse_labels(&raw, n)
 }
 
 #[tauri::command]
@@ -401,19 +432,29 @@ async fn correct_with_ollama(
         "Correct spelling and grammar:\n\n{}\n\nOutput only a JSON object with key \"corrected\".",
         text
     );
-    ollama_generate(
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": { "corrected": { "type": "string" } },
+        "required": ["corrected"],
+    });
+    let raw = ollama_generate(
         &app,
         &state,
         &endpoint,
         &model,
         "Fix spelling and grammar errors. Preserve every word that is correct. Do not rephrase or rewrite creatively.",
         prompt,
-        "corrected",
+        schema,
     )
-    .await
+    .await?;
+    let result = ollama_text::extract_field(&raw, "corrected");
+    if result.trim().is_empty() {
+        return Err("Empty response from Ollama".to_string());
+    }
+    Ok(result)
 }
 
-/// Abort the running format/correct request (the HTTP stream is dropped, so Ollama stops too).
+/// Abort the running classify/correct request (the HTTP stream is dropped, so Ollama stops too).
 #[tauri::command]
 fn cancel_ollama(state: tauri::State<AppState>) {
     state.ollama_generation.fetch_add(1, Ordering::SeqCst);
@@ -690,7 +731,7 @@ pub fn run(initial_file: Option<String>) {
             read_settings,
             save_settings,
             check_ollama,
-            format_with_ollama,
+            classify_lines,
             correct_with_ollama,
             cancel_ollama,
             download_ollama,

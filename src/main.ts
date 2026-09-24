@@ -4,12 +4,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save, ask } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { animate as _animate, easeInOut } from "motion";
-import { createEditor, setEditorContent, setEditorLanguage, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, openDocument, stashDocument, forgetDocument, insertAtCursor, wrapSelection, wrapLines, setHeading, wrapLink, getSelection, replaceSelection, replaceLine, goToLine } from "./editor";
+import { createEditor, setEditorContent, setEditorLanguage, getEditorScrollElement, getEditorScrollTop, setEditorScrollTop, openDocument, stashDocument, forgetDocument, recordDocumentChange, insertAtCursor, wrapSelection, wrapLines, setHeading, wrapLink, getSelection, replaceSelection, replaceLine, goToLine } from "./editor";
 import { renderPreviewContent, buildToc, type RenderOptions } from "./preview";
 import { buildHtmlDocument, renderToHtml, printMarkdown } from "./export";
 import { registerOverlay, showOverlay, hideOverlay, isOverlayOpen, dismissTopOverlay } from "./overlay";
 import { lintMarkdown } from "./lint";
 import { findTaskLines, setTaskChecked } from "./tasks";
+import { planStructure, applyStructure, chunk, type BlockLabel } from "./structure";
 import { escHtml, baseName, dirName, resolvePath, isAbsolutePath, samePath } from "./utils";
 import type { AppState, ViewMode, Settings, Tab, FileEntry, LintIssue } from "./types";
 import "./styles/main.css";
@@ -413,18 +414,20 @@ function cancelOllama(): void {
   hideOverlay(ollamaDialog);
 }
 
+// Character progress is only meaningful for text-producing requests (spelling correction).
+let showCharProgress = false;
+
 listen<{ chars: number }>("ollama-progress", (event) => {
-  if (ollamaBusy) ollamaDialogSub.textContent = `Writing… ${event.payload.chars} characters`;
+  if (ollamaBusy && showCharProgress) ollamaDialogSub.textContent = `Writing… ${event.payload.chars} characters`;
 });
 
-/** Run a format/correct request with the progress dialog. Resolves to null if it failed or was cancelled. */
-async function runOllama(task: "format" | "correct", text: string, title: string): Promise<string | null> {
+/**
+ * Run AI work behind the progress dialog. `work` receives a function telling whether this
+ * request is still current (not cancelled). Resolves to null if it failed or was cancelled.
+ */
+async function withAiDialog<T>(title: string, work: (isCurrent: () => boolean) => Promise<T>): Promise<T | null> {
   if (!settings.ollamaEnabled) {
     setStatus("Enable AI formatting in settings");
-    return null;
-  }
-  if (!text.trim()) {
-    setStatus("No text to format");
     return null;
   }
   if (!(await checkOllamaStatus())) {
@@ -433,28 +436,55 @@ async function runOllama(task: "format" | "correct", text: string, title: string
   }
 
   const myRequest = ++ollamaRequest;
+  const isCurrent = () => myRequest === ollamaRequest;
   ollamaBusy = true;
+  showCharProgress = false;
   ollamaDialogText.textContent = title;
   ollamaDialogSub.textContent = "Waiting for the model…";
   ollamaDialogSub.classList.remove("hidden");
   animateSpinner(ollamaSpinnerEl);
   showOverlay(ollamaDialog);
   try {
-    const result = await invoke<string>(task === "format" ? "format_with_ollama" : "correct_with_ollama", {
-      endpoint: settings.ollamaEndpoint,
-      model: settings.ollamaModel,
-      text,
-    });
-    return myRequest === ollamaRequest ? result : null;
+    const result = await work(isCurrent);
+    return isCurrent() ? result : null;
   } catch (err) {
-    if (myRequest === ollamaRequest) setStatus(`Error: ${err}`);
+    if (isCurrent()) setStatus(`Error: ${err}`);
     return null;
   } finally {
-    if (myRequest === ollamaRequest) {
+    if (isCurrent()) {
       ollamaBusy = false;
       hideOverlay(ollamaDialog);
     }
   }
+}
+
+// Lines per AI request: small models lose track of long numbered lists.
+const CLASSIFY_BATCH = 25;
+
+/**
+ * Format by classification: the model only labels each plain line (heading, list item, …)
+ * and structure.ts adds the Markdown, so no word of the text can change.
+ */
+async function structureWithAi(text: string, context: string, isCurrent: () => boolean): Promise<string> {
+  const plan = planStructure(text);
+  const labels = new Map<number, BlockLabel>();
+  const batches = chunk(plan.candidates, CLASSIFY_BATCH);
+  let done = 0;
+  for (const batch of batches) {
+    if (!isCurrent()) throw new Error("Cancelled");
+    ollamaDialogSub.textContent = plan.candidates.length > batch.length
+      ? `Analysing lines ${done + 1}–${done + batch.length} of ${plan.candidates.length}…`
+      : `Analysing ${batch.length} line${batch.length === 1 ? "" : "s"}…`;
+    const result = await invoke<BlockLabel[]>("classify_lines", {
+      endpoint: settings.ollamaEndpoint,
+      model: settings.ollamaModel,
+      context,
+      lines: batch.map((i) => plan.lines[i]),
+    });
+    batch.forEach((lineIdx, k) => labels.set(lineIdx, result[k] ?? "paragraph"));
+    done += batch.length;
+  }
+  return applyStructure(plan, labels);
 }
 
 /** Replace a tab's whole content as one undoable edit. */
@@ -463,6 +493,7 @@ function replaceTabContent(tab: Tab, content: string): void {
     setEditorContent(content); // fires editor-change → onContentChange
     return;
   }
+  recordDocumentChange(tab.id, tab.content, content);
   tab.content = content;
   tab.modified = content !== tab.originalContent;
   if (tab === getActiveTab()) {
@@ -477,20 +508,35 @@ function replaceTabContent(tab: Tab, content: string): void {
 async function formatWithOllama(): Promise<void> {
   const tab = getActiveTab();
   if (!tab) return;
-  const result = await runOllama("format", tab.content, "Formatting text...");
+  if (!tab.content.trim()) { setStatus("No text to format"); return; }
+  const original = tab.content;
+  const result = await withAiDialog("Formatting text...", (isCurrent) => structureWithAi(original, original, isCurrent));
   if (result === null) return;
+  if (tab.content !== original) { setStatus("Text changed meanwhile – AI result discarded"); return; }
+  if (result === original) { setStatus("Nothing to format"); return; }
   replaceTabContent(tab, result);
   showSuccessOverlay("Text formatted");
 }
 
 async function transformSelectionWithOllama(task: "format" | "correct", sel: string): Promise<void> {
   const tab = getActiveTab();
-  const result = await runOllama(task, sel, task === "format" ? "Formatting selection..." : "Correcting selection...");
+  if (!sel.trim()) { setStatus("Select text first"); return; }
+  const result = task === "format"
+    ? await withAiDialog("Formatting selection...", (isCurrent) => structureWithAi(sel, tab?.content ?? sel, isCurrent))
+    : await withAiDialog("Correcting selection...", () => {
+        showCharProgress = true;
+        return invoke<string>("correct_with_ollama", {
+          endpoint: settings.ollamaEndpoint,
+          model: settings.ollamaModel,
+          text: sel,
+        });
+      });
   if (result === null) return;
   if (getActiveTab() !== tab || getSelection() !== sel) {
     setStatus("Selection changed – AI result discarded");
     return;
   }
+  if (result === sel) { setStatus(task === "format" ? "Nothing to format" : "No corrections"); return; }
   replaceSelection(result);
   showSuccessOverlay(task === "format" ? "Selection formatted" : "Selection corrected");
 }

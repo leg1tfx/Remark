@@ -85,6 +85,18 @@ export function stashDocument(key: string): void {
   if (view) documentStates.set(key, view.state);
 }
 
+/**
+ * Record a whole-document replacement for a document that is not shown in the editor
+ * (e.g. formatted from the preview), so it can still be undone later.
+ */
+export function recordDocumentChange(key: string, before: string, after: string): void {
+  const saved = documentStates.get(key);
+  const base = saved && saved.doc.toString() === before
+    ? saved
+    : EditorState.create({ doc: before, extensions: buildExtensions() });
+  documentStates.set(key, base.update({ changes: { from: 0, to: base.doc.length, insert: after } }).state);
+}
+
 export function forgetDocument(key: string): void {
   documentStates.delete(key);
 }
