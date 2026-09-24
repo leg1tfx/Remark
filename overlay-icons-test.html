@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<style>
+  :root{
+    --accent:#c4845a; --surface:oklch(0.95 0.01 85); --bg:oklch(0.97 0.008 80);
+    --text:#3d352c; --border:#ddd;
+  }
+  body{background:var(--bg);color:var(--text);font-family:sans-serif;padding:24px;}
+  .drop-content{display:flex;flex-direction:column;align-items:center;gap:12px;padding:40px 60px;border:2px dashed var(--accent);border-radius:16px;background:var(--surface);color:var(--accent);}
+  .toast{border:1px solid #ddd;border-radius:14px;padding:20px;display:inline-block;}
+</style>
+</head>
+<body>
+  <h3>1. Drop-Overlay Icon (so wie beim Drag&amp;Drop)</h3>
+  <div class="drop-content">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14,2 14,8 20,8"/>
+      <line x1="12" y1="18" x2="12" y2="12"/>
+      <line x1="9" y1="15" x2="15" y2="15"/>
+    </svg>
+    <p class="text-lg font-medium">Drop file to open</p>
+  </div>
+
+  <h3>2. Success-Overlay (Check + Kreis)</h3>
+  <div class="toast">
+    <svg class="w-12 h-12" viewBox="0 0 64 64" fill="none">
+      <circle cx="32" cy="32" r="28" stroke="var(--accent)" stroke-width="4" fill="none"/>
+      <polyline points="20,34 28,42 44,24" stroke="var(--accent)" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <p>File opened</p>
+  </div>
+
+  <h3>3. Spinner (AI-Dialog)</h3>
+  <svg viewBox="0 0 32 32" fill="none" stroke="var(--accent)" stroke-width="3">
+    <circle cx="16" cy="16" r="13" stroke-dasharray="80" stroke="var(--border)" stroke-width="3" fill="none"/>
+    <circle cx="16" cy="16" r="13" stroke-dasharray="80" stroke-dashoffset="60" stroke-linecap="round" stroke="var(--accent)" stroke-width="3" fill="none"/>
+  </svg>
+
+  <h3>4. Icons deklariert sichtbar via JS-Selbsttest:</h3>
+  <div id="report"></div>
+  <script>
+    const r = document.getElementById('report');
+    function chk(name, svg){
+      const cb=svg.getBoundingClientRect();
+      const fill=getComputedStyle(svg).color;
+      r.innerHTML+='<div>'+name+': '+Math.round(cb.width)+'x'+Math.round(cb.height)+'px | stroke/color='+fill+'</div>';
+    }
+    chk('Drop-Icon', document.querySelector('.drop-content svg'));
+    chk('Success-Check', document.querySelector('.toast svg'));
+  </script>
+</body>
+</html>

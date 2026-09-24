@@ -724,7 +724,7 @@ async function checkFirstRunOllama(): Promise<void> {
     if (running) return;
     if (i < 2) await new Promise((r) => setTimeout(r, 2000));
   }
-  if (settings.ollamaEnabled && !settings.ollamaSetupComplete) {
+  if (settings.ollamaEnabled && !settings.ollamaSetupComplete && !settings.ollamaSetupDismissed) {
     showOllamaSetup();
   }
 }
@@ -1335,7 +1335,12 @@ document.getElementById("ollama-close")!.addEventListener("click", () => {
 
 ollamaSetupBackdrop.addEventListener("click", hideOllamaSetup);
 ollamaSetupClose.addEventListener("click", hideOllamaSetup);
-setupSkip.addEventListener("click", hideOllamaSetup);
+setupSkip.addEventListener("click", () => {
+  // "Later" klicken = Dialog beim nächsten Start nicht erneut automatisch öffnen.
+  settings.ollamaSetupDismissed = true;
+  saveSettingsFn();
+  hideOllamaSetup();
+});
 setupErrorClose.addEventListener("click", hideOllamaSetup);
 setupStart.addEventListener("click", startOllamaSetup);
 setupFinish.addEventListener("click", hideOllamaSetup);
