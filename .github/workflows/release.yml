@@ -1,10 +1,12 @@
 name: Release
 
-# Push a tag like v1.1.0 to build the Windows installers and create a draft release.
-# The version in the tag must match src-tauri/tauri.conf.json.
+# Builds the Windows installers and creates a draft GitHub release named after the
+# version in src-tauri/tauri.conf.json. Start it either by pushing a tag like v1.1.0
+# or with "Run workflow" on the Actions tab (the tag is then created automatically).
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -27,7 +29,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Remark ${{ github.ref_name }}
+          tagName: v__VERSION__
+          releaseName: Remark v__VERSION__
           releaseBody: See [RELEASE_NOTES.md](https://github.com/leg1tfx/Remark/blob/master/RELEASE_NOTES.md) for what changed.
           releaseDraft: true

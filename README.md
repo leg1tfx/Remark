@@ -39,7 +39,8 @@ cd src-tauri && cargo clippy --all-targets
 ```
 
 CI runs all of these on every push and pull request. Pushing a tag like `v1.1.0`
-builds the Windows installers and creates a draft GitHub release.
+builds the Windows installers and creates a draft GitHub release
+(also available as "Run workflow" on the Actions tab).
 
 ### Code layout
 
